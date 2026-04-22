@@ -32,6 +32,7 @@ export type Lecture = {
   progress: number; // 0.0 to 1.0
   abandonedSessionsCount: number;
   relatedLectureIds: string[];
+  week?: number;
 };
 
 export type Exam = {
@@ -93,7 +94,8 @@ export interface CategoryPriorityBreakdown {
 
 export function getCategorizedPriority(
   lecture: Lecture,
-  weights: PriorityWeights
+  weights: PriorityWeights,
+  semesterStartDate?: string
 ): CategoryPriorityBreakdown {
   const now = Date.now();
   
@@ -102,14 +104,31 @@ export function getCategorizedPriority(
     if (!dateStr) return 7;
     const time = new Date(dateStr).getTime();
     if (isNaN(time)) return 7;
-    return (now - time) / (1000 * 60 * 60 * 24);
+    return Math.max(0, (now - time) / (1000 * 60 * 60 * 24));
+  };
+
+  // Determine current academic week
+  const getCurrentWeek = () => {
+    if (!semesterStartDate) return 1; 
+    const start = new Date(semesterStartDate).getTime();
+    if (isNaN(start)) return 1;
+    const diffDays = (now - start) / (1000 * 60 * 60 * 24);
+    // Day 0-6 = Week 1, Day 7-13 = Week 2
+    return Math.max(1, Math.floor(diffDays / 7) + 1);
   };
 
   // 1. NEW LECTURES (S, C, T)
-  const daysSinceTaken = getDaysSince(lecture.date);
+  const currentWeek = getCurrentWeek();
+  const weeksDiff = lecture.week ? (currentWeek - lecture.week) : (getDaysSince(lecture.date) / 7);
+  // Ensure we don't have negative days for future weeks, but also don't hit 0 too hard
+  const daysSinceTaken = Math.max(0, weeksDiff * 7);
+  
   const newS = (lecture.difficulty || 0.5) * (weights.newDifficulty || 0);
   const newC = Math.min(1, (lecture.pageCount || 0) / 30) * (weights.newSize || 0);
-  const newT = Math.max(0, 1 - (daysSinceTaken / 7)) * (weights.newRecency || 0);
+  
+  // More forgiving recency decay: 100% at 0 days, 10% at 21 days
+  const recencyMultiplier = Math.max(0.1, 1 - (daysSinceTaken / 21));
+  const newT = recencyMultiplier * (weights.newRecency || 0);
   const newTotal = newS + newC + newT;
 
   // 2. REVIEW (M, R, T_last)
@@ -177,9 +196,10 @@ export function getLecturePriorityScore(
   lecture: Lecture,
   lectures: Lecture[],
   exams: Exam[],
-  weights: PriorityWeights
+  weights: PriorityWeights,
+  semesterStartDate?: string
 ): number {
-  const breakdown = getCategorizedPriority(lecture, weights);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
   return Math.round(breakdown.total);
 }
 
@@ -248,14 +268,15 @@ export function calculatePriorityScore(
     solvingAccuracy: 40,
     solvingDifficulty: 30,
     solvingStaleness: 30
-  }
+  },
+  semesterStartDate?: string
 ): number {
   let rawScore = 0;
 
   if (task.lectureId) {
     const lecture = lectures.find(l => l.id === task.lectureId);
     if (lecture) {
-      const breakdown = getCategorizedPriority(lecture, weights);
+      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
       rawScore = breakdown.total;
     }
   } else {

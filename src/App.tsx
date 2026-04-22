@@ -104,7 +104,8 @@ const Dashboard = ({
   focusScore,
   dailyTaskLimit,
   t,
-  language
+  language,
+  semesterStartDate
 }: { 
   narrative: string, 
   tasks: Task[], 
@@ -121,7 +122,8 @@ const Dashboard = ({
   focusScore: number,
   dailyTaskLimit: number,
   t: any,
-  language: Language
+  language: Language,
+  semesterStartDate?: string
 }) => {
   const [selectedDay, setSelectedDay] = useState<'yesterday' | 'today' | 'tomorrow' | 'after'>('today');
 
@@ -147,11 +149,11 @@ const Dashboard = ({
       .filter(t => !t.completed)
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => l.id === t.lectureId) : null;
-        let score = calculatePriorityScore(t, lectures, exams, weights);
+        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate);
         let type = t.type;
         
         if (lecture) {
-           const breakdown = getCategorizedPriority(lecture, weights);
+           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
            score = breakdown.total;
            if (!type) {
              type = breakdown.category;
@@ -430,40 +432,49 @@ const Dashboard = ({
                         <Zap size={12} className="text-focus-gold" />
                         <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-focus-gold">{t.critical_focus}</span>
                       </div>
-                      {dayTasks.filter(t_task => (t_task.priorityScore || 0) > 70).map(task => (
-                        <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
-                          <div className={cn(
-                            "absolute left-0 top-0 bottom-0 w-1 shadow-lg transition-all duration-500",
-                            task.type === 'review' ? "bg-focus-gold shadow-[0_0_10px_rgba(255,215,0,0.4)]" : 
-                            task.type === 'solving' ? "bg-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.4)]" : 
-                            "bg-focus-cyan shadow-[0_0_10px_rgba(0,242,255,0.4)]"
-                          )} />
-                          <button onClick={() => onToggleTask(task.id)} className="text-focus-slate group-hover:text-focus-cyan">
-                            {task.completed ? <CheckCircle2 size={20} className="text-focus-cyan" /> : <Circle size={20} />}
-                          </button>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{task.title}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <p className="text-[10px] text-focus-slate uppercase tracking-wider">{new Date(task.dueDate).toLocaleDateString()}</p>
-                              <span className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 text-focus-slate font-mono">Score: {task.priorityScore}</span>
+                      {dayTasks.filter(t_task => (t_task.priorityScore || 0) > 70).map(task => {
+                        const lecture = task.lectureId ? lectures.find(l => l.id === task.lectureId) : null;
+                        return (
+                          <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
+                            <div className={cn(
+                              "absolute left-0 top-0 bottom-0 w-1 shadow-lg transition-all duration-500",
+                              task.type === 'review' ? "bg-focus-gold shadow-[0_0_10px_rgba(255,215,0,0.4)]" : 
+                              task.type === 'solving' ? "bg-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.4)]" : 
+                              "bg-focus-cyan shadow-[0_0_10px_rgba(0,242,255,0.4)]"
+                            )} />
+                            <button onClick={() => onToggleTask(task.id)} className="text-focus-slate group-hover:text-focus-cyan">
+                              {task.completed ? <CheckCircle2 size={20} className="text-focus-cyan" /> : <Circle size={20} />}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{task.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {lecture?.week ? (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-focus-cyan/10 text-focus-cyan font-bold uppercase tracking-widest border border-focus-cyan/20">
+                                    {language === 'ar' ? `الأسبوع ${lecture.week}` : `Week ${lecture.week}`}
+                                  </span>
+                                ) : (
+                                  <p className="text-[10px] text-focus-slate uppercase tracking-wider">{new Date(task.dueDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : undefined, { month: 'short', day: 'numeric' })}</p>
+                                )}
+                                <span className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 text-focus-slate font-mono">Score: {task.priorityScore}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {task.lectureId && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onPartialTask(task.lectureId!);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-focus-gold/10 text-focus-gold hover:bg-focus-gold hover:text-focus-bg transition-all"
+                                  title="Register Partial Progress"
+                                >
+                                  <Pause size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {task.lectureId && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onPartialTask(task.lectureId!);
-                                }}
-                                className="p-1.5 rounded-lg bg-focus-gold/10 text-focus-gold hover:bg-focus-gold hover:text-focus-bg transition-all"
-                                title="Register Partial Progress"
-                              >
-                                <Pause size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -474,43 +485,54 @@ const Dashboard = ({
                         <Target size={12} className="text-focus-cyan" />
                         <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-focus-slate">{t.standard_stream}</span>
                       </div>
-                      {dayTasks.filter(t_task => (t_task.priorityScore || 0) <= 70).map(task => (
-                        <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
-                          <div className={cn(
-                            "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
-                            selectedDay === 'yesterday' ? "bg-green-400" : 
-                            task.type === 'review' ? "bg-focus-gold" : 
-                            task.type === 'solving' ? "bg-purple-400" : 
-                            "bg-focus-cyan"
-                          )} />
-                          <button onClick={() => onToggleTask(task.id)} className={cn("transition-colors", selectedDay === 'yesterday' ? "text-green-400" : "text-focus-slate group-hover:text-focus-cyan")}>
-                            {task.completed ? <CheckCircle2 size={20} className="text-focus-cyan" /> : <Circle size={20} />}
-                          </button>
-                          <div className="flex-1">
-                            <p className={cn("text-sm font-medium", task.completed && "line-through text-focus-slate")}>{task.title}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <p className="text-[10px] text-focus-slate uppercase tracking-wider">
-                                {selectedDay === 'yesterday' ? `Completed ${new Date(task.completedDate!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : new Date(task.dueDate).toLocaleDateString()}
-                              </p>
-                              {selectedDay !== 'yesterday' && <span className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 text-focus-slate font-mono">Score: {task.priorityScore}</span>}
+                      {dayTasks.filter(t_task => (t_task.priorityScore || 0) <= 70).map(task => {
+                        const lecture = task.lectureId ? lectures.find(l => l.id === task.lectureId) : null;
+                        return (
+                          <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
+                            <div className={cn(
+                              "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
+                              selectedDay === 'yesterday' ? "bg-green-400" : 
+                              task.type === 'review' ? "bg-focus-gold" : 
+                              task.type === 'solving' ? "bg-purple-400" : 
+                              "bg-focus-cyan"
+                            )} />
+                            <button onClick={() => onToggleTask(task.id)} className={cn("transition-colors", selectedDay === 'yesterday' ? "text-green-400" : "text-focus-slate group-hover:text-focus-cyan")}>
+                              {task.completed ? <CheckCircle2 size={20} className="text-focus-cyan" /> : <Circle size={20} />}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <p className={cn("text-sm font-medium truncate", task.completed && "line-through text-focus-slate")}>{task.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {lecture?.week ? (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-focus-cyan/10 text-focus-cyan font-bold uppercase tracking-widest border border-focus-cyan/20">
+                                    {language === 'ar' ? `الأسبوع ${lecture.week}` : `Week ${lecture.week}`}
+                                  </span>
+                                ) : (
+                                  <p className="text-[10px] text-focus-slate uppercase tracking-wider">
+                                    {selectedDay === 'yesterday' 
+                                      ? (language === 'ar' ? `تم الإكمال ${new Date(task.completedDate!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : `Completed ${new Date(task.completedDate!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)
+                                      : new Date(task.dueDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : undefined, { month: 'short', day: 'numeric' })}
+                                  </p>
+                                )}
+                                {selectedDay !== 'yesterday' && <span className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 text-focus-slate font-mono">Score: {task.priorityScore}</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {task.lectureId && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onPartialTask(task.lectureId!);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-focus-gold/10 text-focus-gold hover:bg-focus-gold hover:text-focus-bg transition-all"
+                                  title="Register Partial Progress"
+                                >
+                                  <Pause size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {task.lectureId && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onPartialTask(task.lectureId!);
-                                }}
-                                className="p-1.5 rounded-lg bg-focus-gold/10 text-focus-gold hover:bg-focus-gold hover:text-focus-bg transition-all"
-                                title="Register Partial Progress"
-                              >
-                                <Pause size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </>
@@ -571,13 +593,14 @@ const Dashboard = ({
   );
 };
 
-const PriorityBreakdown = ({ lecture, weights, t, language }: { 
+const PriorityBreakdown = ({ lecture, weights, t, language, semesterStartDate }: { 
   lecture: Lecture, 
   weights: PriorityWeights, 
   t: any, 
-  language: Language 
+  language: Language,
+  semesterStartDate?: string
 }) => {
-  const breakdown = getCategorizedPriority(lecture, weights);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
   
   return (
     <div className="glass p-4 rounded-xl space-y-3 border border-white/5">
@@ -645,7 +668,8 @@ const LectureIntelligenceForm = ({
   onSave, 
   onDelete,
   t,
-  language
+  language,
+  semesterStartDate
 }: { 
   lecture: Lecture, 
   subjects: Subject[], 
@@ -655,7 +679,8 @@ const LectureIntelligenceForm = ({
   onSave: (updated: Lecture) => void, 
   onDelete: (id: string) => void,
   t: any,
-  language: Language
+  language: Language,
+  semesterStartDate?: string
 }) => {
   const [formData, setFormData] = useState<Lecture>(lecture);
 
@@ -711,7 +736,13 @@ const LectureIntelligenceForm = ({
       e.preventDefault();
       onSave(formData);
     }} className="space-y-6">
-      <PriorityBreakdown lecture={formData} weights={weights} t={t} language={language} />
+      <PriorityBreakdown 
+        lecture={formData} 
+        weights={weights} 
+        t={t} 
+        language={language} 
+        semesterStartDate={semesterStartDate} 
+      />
 
       <div className="space-y-4">
         <div>
@@ -740,8 +771,24 @@ const LectureIntelligenceForm = ({
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">{t.week || 'Week'}</label>
+            <input 
+              name="week" 
+              type="number" 
+              min="1"
+              max="52"
+              value={formData.week || ''} 
+              onChange={handleChange}
+              placeholder="e.g. 1"
+              className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" 
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
           <div className="relative group">
-            <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">Date</label>
+            <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">{t.date || 'Date'}</label>
             <div className="relative h-[46px]">
               {/* Display Layer */}
               <div className="absolute inset-0 glass border flex items-center justify-between px-4 border-focus-border rounded-xl pointer-events-none group-hover:bg-white/5 transition-colors">
@@ -962,7 +1009,8 @@ const LibraryScreen = ({
   onEditSubject,
   onBulkUpdateLectures,
   t,
-  language
+  language,
+  semesterStartDate
 }: { 
   subjects: Subject[], 
   lectures: Lecture[], 
@@ -974,7 +1022,8 @@ const LibraryScreen = ({
   onEditSubject: (subject: Subject) => void,
   onBulkUpdateLectures: (ids: string[], updates: Partial<Lecture>) => void,
   t: any,
-  language: Language
+  language: Language,
+  semesterStartDate?: string
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
@@ -1197,7 +1246,7 @@ const LibraryScreen = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredLectures.length > 0 ? (
             filteredLectures.map(lecture => {
-              const score = getLecturePriorityScore(lecture, lectures, exams, weights);
+              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate);
               const subject = subjects.find(s => s.id === lecture.subjectId);
               const isSelected = selectedLectureIds.includes(lecture.id);
 
@@ -1232,7 +1281,9 @@ const LibraryScreen = ({
                         <h3 className="text-sm font-bold text-white truncate group-hover:text-focus-cyan transition-colors">{lecture.title}</h3>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: subject?.color }}>{subject?.name}</span>
-                          <span className="text-[10px] text-focus-slate font-mono">{lecture.pageCount}{language === 'ar' ? 'ص' : 'p'} • {new Date(lecture.date).toLocaleDateString(language === 'ar' ? 'ar-EG' : undefined, { month: 'short', day: 'numeric' })}</span>
+                          <span className="text-[10px] text-focus-slate font-mono">
+                            {lecture.week ? (language === 'ar' ? `الأسبوع ${lecture.week}` : `Week ${lecture.week}`) : (new Date(lecture.date).toLocaleDateString(language === 'ar' ? 'ar-EG' : undefined, { month: 'short', day: 'numeric' }))} • {lecture.pageCount}{language === 'ar' ? 'ص' : 'p'}
+                          </span>
                             <div className="flex items-center gap-2 ml-1">
                               <div className="flex items-center gap-0.5" title={t.revision}>
                                 <History size={10} className="text-focus-gold" />
@@ -1741,7 +1792,9 @@ const PriorityEngine = ({
   language,
   onLanguageChange,
   onOpenTutorial,
-  t
+  t,
+  semesterStartDate,
+  onSemesterStartDateChange
 }: { 
   weights: PriorityWeights, 
   onWeightChange: (key: keyof PriorityWeights, val: number) => void,
@@ -1759,7 +1812,9 @@ const PriorityEngine = ({
   language: Language,
   onLanguageChange: (val: Language) => void,
   onOpenTutorial: () => void,
-  t: any
+  t: any,
+  semesterStartDate: string,
+  onSemesterStartDateChange: (val: string) => void
 }) => {
   const factorGroups = [
     {
@@ -2035,6 +2090,71 @@ const PriorityEngine = ({
           </div>
         ))}
       </div>
+
+      {/* Semester Timeline Setting */}
+      <section className="space-y-6">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-focus-slate">{t.semester_timeline || 'Semester Timeline'}</h3>
+        <GlassCard className="p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="text-left">
+              <p className="text-xs font-bold text-white mb-1">{t.academic_start_date || 'Academic Start Date'}</p>
+              <p className="text-[10px] text-focus-slate leading-relaxed">
+                {language === 'ar' ? 'هذا التاريخ يحدد بداية "الأسبوع 1". يتم حساب جميع أسابيع المحاضرات بناءً عليه لتحقيق الأولوية.' : 'This date defines the start of "Week 1". All lecture weeks are calculated relative to this for priority.'}
+              </p>
+              
+              <div className="mt-4 flex items-center gap-3">
+                <div className="px-3 py-1.5 rounded-full bg-focus-cyan/10 border border-focus-cyan/20 flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-focus-cyan animate-pulse" />
+                  <span className="text-[10px] font-bold text-focus-cyan uppercase tracking-widest">
+                    {language === 'ar' ? 'الأسبوع الحالي:' : 'Current Week:'} {
+                      semesterStartDate ? Math.max(1, Math.floor((Date.now() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1) : '-'
+                    }
+                  </span>
+                </div>
+                
+                <div className="flex gap-1">
+                  <button 
+                    onClick={() => {
+                      const d = new Date(semesterStartDate);
+                      d.setDate(d.getDate() + 7);
+                      onSemesterStartDateChange(d.toISOString().split('T')[0]);
+                    }}
+                    title={language === 'ar' ? 'الأسبوع السابق' : 'Decrease Current Week'}
+                    className="w-8 h-8 rounded-lg glass border border-white/5 flex items-center justify-center text-focus-slate hover:text-white hover:bg-white/5 transition-all"
+                  >
+                    -
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const d = new Date(semesterStartDate);
+                      d.setDate(d.getDate() - 7);
+                      onSemesterStartDateChange(d.toISOString().split('T')[0]);
+                    }}
+                    title={language === 'ar' ? 'الأسبوع التالي' : 'Increase Current Week'}
+                    className="w-8 h-8 rounded-lg glass border border-white/5 flex items-center justify-center text-focus-slate hover:text-white hover:bg-white/5 transition-all"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="relative group w-full sm:w-48 h-10">
+              <div className="absolute inset-0 glass border flex items-center justify-between px-4 border-focus-border rounded-xl pointer-events-none group-hover:bg-white/5 transition-colors">
+                <span className="text-white text-xs font-mono">
+                  {new Date(semesterStartDate).toLocaleDateString()}
+                </span>
+                <Calendar className="w-4 h-4 text-focus-cyan" />
+              </div>
+              <input 
+                type="date" 
+                value={semesterStartDate} 
+                onChange={(e) => onSemesterStartDateChange(e.target.value)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+              />
+            </div>
+          </div>
+        </GlassCard>
+      </section>
 
       {/* Intelligence Mode & Maintenance */}
       <section className="space-y-6 pb-24">
@@ -2474,6 +2594,14 @@ export default function App() {
     return isFinite(parsed) ? parsed : 5;
   });
 
+  const [semesterStartDate, setSemesterStartDate] = useState<string>(() => {
+    const saved = localStorage.getItem('focus_semester_start');
+    if (saved) return saved;
+    const d = new Date();
+    d.setDate(d.getDate() - 30); // Default to 30 days ago as "Week 1"
+    return d.toISOString().split('T')[0];
+  });
+
   const [profiles, setProfiles] = useState<{ name: string, weights: PriorityWeights }[]>(() => {
     const saved = localStorage.getItem('focus_profiles');
     const defaultWeights = {
@@ -2518,7 +2646,8 @@ export default function App() {
     localStorage.setItem('focus_profiles', JSON.stringify(profiles));
     localStorage.setItem('focus_language', language);
     localStorage.setItem('focus_ai_enabled', JSON.stringify(isAIEnabled));
-  }, [subjects, lectures, exams, tasks, weights, allocation, dailyTaskLimit, profiles, isAIEnabled, language]);
+    localStorage.setItem('focus_semester_start', semesterStartDate);
+  }, [subjects, lectures, exams, tasks, weights, allocation, dailyTaskLimit, profiles, isAIEnabled, language, semesterStartDate]);
 
   useEffect(() => {
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
@@ -2560,7 +2689,7 @@ export default function App() {
     // When the user changes allocation, weights, or limit, we "clear the deck"
     // so the auto-generation effect can refill it with tasks that match the new constraints.
     setTasks(prev => prev.filter(t => t.completed || !t.id.startsWith('auto-')));
-  }, [allocation, weights, dailyTaskLimit]);
+  }, [allocation, weights, dailyTaskLimit, semesterStartDate]);
 
   // 2. Generation logic: Refill the dashboard based on Current State
   useEffect(() => {
@@ -2570,7 +2699,7 @@ export default function App() {
       now.setHours(0, 0, 0, 0);
 
       lectures.forEach(lecture => {
-        const breakdown = getCategorizedPriority(lecture, weights);
+        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
         const { scores } = breakdown;
         
         // Helper to check if a task of a certain type already exists for this lecture
@@ -2648,7 +2777,7 @@ export default function App() {
 
     const timer = setTimeout(autoGenerateTasks, 1500); // 1.5s delay to avoid race conditions
     return () => clearTimeout(timer);
-  }, [lectures, exams, weights, tasks, allocation, dailyTaskLimit]);
+  }, [lectures, exams, weights, tasks, allocation, dailyTaskLimit, semesterStartDate]);
 
   const toggleTask = (id: string) => {
     setTasks(prev => {
@@ -3248,6 +3377,7 @@ export default function App() {
                 dailyTaskLimit={dailyTaskLimit}
                 t={t}
                 language={language}
+                semesterStartDate={semesterStartDate}
               />
             </motion.div>
           )}
@@ -3265,6 +3395,7 @@ export default function App() {
                 onBulkUpdateLectures={bulkUpdateLectures}
                 t={t}
                 language={language}
+                semesterStartDate={semesterStartDate}
               />
             </motion.div>
           )}
@@ -3320,6 +3451,8 @@ export default function App() {
                 onLanguageChange={setLanguage}
                 onOpenTutorial={() => setIsTutorialOpen(true)}
                 t={t}
+                semesterStartDate={semesterStartDate}
+                onSemesterStartDateChange={setSemesterStartDate}
               />
             </motion.div>
           )}
@@ -3431,7 +3564,7 @@ export default function App() {
             {tasks
               .filter(t => taskFilter === 'active' ? !t.completed : t.completed)
               .filter(t => t.title.toLowerCase().includes(taskSearch.toLowerCase()))
-              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights) }))
+              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate) }))
               .sort((a, b) => (b.score || 0) - (a.score || 0))
               .map(task => (
                 <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl border border-white/5">
@@ -3642,6 +3775,7 @@ export default function App() {
             lectures={lectures}
             exams={exams}
             weights={weights}
+            semesterStartDate={semesterStartDate}
             onSave={(updated) => {
               updateLecture(updated);
               setEditingLecture(null);

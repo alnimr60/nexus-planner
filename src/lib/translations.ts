@@ -83,6 +83,10 @@ export const translations = {
     imported_none: "No items detected. Try pasting more details.",
     confidence: "Confidence",
     // Factors
+    academic_start_date: "Academic Start Date",
+    week: "Week",
+    week_format: "Week {count}",
+    semester_timeline: "Semester Timeline",
     foundation: "Foundation (Study)",
     revision: "Consolidation (Revision)",
     solving: "Strategic Solve (Practice)",
@@ -230,6 +234,10 @@ export const translations = {
     completed: "مكتمل",
     confidence: "الثقة",
     // Factors
+    academic_start_date: "تاريخ بداية الفصل",
+    week: "الأسبوع",
+    week_format: "الأسبوع {count}",
+    semester_timeline: "الجدول الزمني للفصل",
     foundation: "التأسيس (دراسة)",
     revision: "التثبيت (مراجعة)",
     solving: "الحل الاستراتيجي (تدريب)",

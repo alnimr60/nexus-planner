@@ -2529,7 +2529,8 @@ export default function App() {
         };
 
         // 1. FOUNDATION (New Topics) - Focus: Study
-        if (lecture.progress < 1 && scores.new > 30) {
+        // Only trigger if we have NEVER studied it
+        if (lecture.progress < 1 && scores.new > 30 && (lecture.studyCount || 0) === 0) {
           if (!hasExisting('new')) {
             newTasks.push({
               id: `auto-new-${lecture.id}-${Date.now()}`,
@@ -2764,17 +2765,18 @@ export default function App() {
   const updateLecture = (updated: Lecture) => {
     setLectures(prev => prev.map(l => l.id === updated.id ? updated : l));
     
-    // Sync tasks: If lecture is manually updated to be studied/practiced, complete relevant tasks
-    setTasks(prev => prev.map(t => {
-      if (t.lectureId === updated.id && !t.completed) {
+    // Sync tasks: If lecture is manually updated to be studied/practiced, remove relevant suggested tasks
+    setTasks(prev => prev.filter(t => {
+      const isTarget = t.lectureId && String(t.lectureId) === String(updated.id);
+      if (isTarget && !t.completed) {
         if ((updated.studyCount || 0) > 0 && t.type === 'new') {
-          return { ...t, completed: true, completedDate: new Date().toISOString() };
+          return false;
         }
         if (((updated.practiceCount || 0) > 0 || updated.practiceDone) && t.type === 'solving') {
-          return { ...t, completed: true, completedDate: new Date().toISOString() };
+          return false;
         }
       }
-      return t;
+      return true;
     }));
     
     setEditingLecture(null);
@@ -2798,35 +2800,26 @@ export default function App() {
       return l;
     }));
 
-    // Sync tasks: If lectures are updated with study/practice info, complete relevant tasks
-    setTasks(prev => prev.map(t => {
-      if (t.lectureId && ids.includes(t.lectureId) && !t.completed) {
-        // If marking as studied, complete Study (new) tasks
+    // Sync tasks: If lectures are updated with study/practice info, remove relevant suggested tasks
+    setTasks(prev => prev.filter(t => {
+      // Use string comparison for IDs to handle mixed types (numeric vs string)
+      const isAffected = t.lectureId && ids.some(id => String(id) === String(t.lectureId));
+      
+      if (isAffected && !t.completed) {
+        // If marking as studied, remove Study (new) tasks
         if (updates.studyCount !== undefined && t.type === 'new') {
-          return { 
-            ...t, 
-            completed: true, 
-            completedDate: new Date().toISOString() 
-          };
+          return false;
         }
-        // If marking as practiced, complete Solving tasks
+        // If marking as practiced, remove Solving tasks
         if ((updates.practiceCount !== undefined || updates.practiceDone !== undefined) && t.type === 'solving') {
-          return { 
-            ...t, 
-            completed: true, 
-            completedDate: new Date().toISOString() 
-          };
+          return false;
         }
-        // If progress is marked as 100%, complete the Review tasks too
+        // If marking either, and it's 100%, remove Review too
         if (updates.progress === 1 && t.type === 'review') {
-          return {
-            ...t,
-            completed: true,
-            completedDate: new Date().toISOString()
-          };
+          return false;
         }
       }
-      return t;
+      return true;
     }));
   };
 

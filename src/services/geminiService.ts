@@ -2,6 +2,31 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+/**
+ * Helper to call Gemini with a simple retry for transient RPC/XHR errors
+ */
+async function callGeminiWithRetry(params: any, retries = 2): Promise<any> {
+  let lastError: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error: any) {
+      lastError = error;
+      // If it's a transient status code (500, 503, 504) or an XHR error
+      const errorMsg = error?.message || "";
+      const isTransient = errorMsg.includes("Rpc failed") || errorMsg.includes("xhr error") || [500, 503, 504].includes(error?.status);
+      
+      if (isTransient && i < retries) {
+        // Wait a bit before retrying (500ms, 1000ms)
+        await new Promise(resolve => setTimeout(resolve, 500 * (i + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 export async function generateNarrative(data: {
   userName: string;
   subjects: any[];
@@ -28,7 +53,7 @@ export async function generateNarrative(data: {
       Use markdown bolding for key terms.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry({
       model: "gemini-3-flash-preview",
       contents: prompt,
     });
@@ -38,14 +63,15 @@ export async function generateNarrative(data: {
     if (error?.status === 403 || error?.message?.includes('PERMISSION_DENIED')) {
       return "Nexus AI is currently limited by API permissions. Please check your **API Key** in settings or switch to **Standard mode** in the Engine tab.";
     }
-    console.error("Error generating narrative:", error);
+    // Suppress noisy internal RPC errors for the user but log it for debugging
+    console.warn("Nexus AI Narrator encountered an issue. Falling back to default message.");
     return "Welcome back! Ready to focus on your goals?";
   }
 }
 
 export async function processPulsePrompt(prompt: string) {
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry({
       model: "gemini-3-flash-preview",
       contents: `
         The user said: "${prompt}"

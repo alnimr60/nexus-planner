@@ -2565,7 +2565,7 @@ export default function App() {
 
         // 1. FOUNDATION (New Topics) - Focus: Study
         // Only trigger if we have NEVER studied it
-        if (lecture.progress < 1 && scores.new > 30 && (lecture.studyCount || 0) === 0) {
+        if (lecture.progress < 1 && scores.new > 10 && (lecture.studyCount || 0) === 0) {
           if (!hasExisting('new')) {
             newTasks.push({
               id: `auto-new-${lecture.id}-${Date.now()}`,
@@ -2582,7 +2582,7 @@ export default function App() {
         
         // 2. STRATEGIC SOLVE (Practice) - Focus: Practice
         // Now triggers if we've studied at least once, or have manual progress
-        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 30) {
+        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 10) {
           if (!hasExisting('solving')) {
             newTasks.push({
               id: `auto-solve-${lecture.id}-${Date.now()}`,
@@ -2599,7 +2599,7 @@ export default function App() {
 
         // 3. DEEP REVIEW (Revision) - Focus: Revision
         // Now triggers if we've studied at least once
-        if (lecture.studyCount > 0 && scores.review > 20) {
+        if (lecture.studyCount > 0 && scores.review > 10) {
           if (!hasExisting('review')) {
             newTasks.push({
               id: `auto-review-${lecture.id}-${Date.now()}`,
@@ -2616,50 +2616,14 @@ export default function App() {
       });
 
       if (newTasks.length > 0) {
-        const currentIncompleteCount = tasks.filter(t => !t.completed).length;
-        const totalCapacity = Math.max(0, dailyTaskLimit - currentIncompleteCount);
-        if (totalCapacity <= 0) return;
-
-        // Group tasks by type to respect allocation
-        const tasksByType = {
-          new: newTasks.filter(t => t.type === 'new').sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0)),
-          review: newTasks.filter(t => t.type === 'review').sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0)),
-          solving: newTasks.filter(t => t.type === 'solving').sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0))
-        };
-
-        // Calculate quotas based on allocation
-        const quotas = {
-          new: Math.round(totalCapacity * (allocation.new / 100)),
-          review: Math.round(totalCapacity * (allocation.review / 100)),
-          solving: Math.round(totalCapacity * (allocation.solving / 100))
-        };
-
-        // If rounding results in 0 but capacity exists, ensure at least some diversity if tasks exist
-        if (quotas.new === 0 && tasksByType.new.length > 0 && allocation.new > 0) quotas.new = 1;
-        if (quotas.review === 0 && tasksByType.review.length > 0 && allocation.review > 0) quotas.review = 1;
-        if (quotas.solving === 0 && tasksByType.solving.length > 0 && allocation.solving > 0) quotas.solving = 1;
-
-        const selectedTasks: Task[] = [];
+        // We now generate ALL valid tasks discovered (up to a safe buffer) 
+        // and let the Dashboard UI handle the specific daily quota slicing.
+        // This ensures "View All" shows the full roadmap and future days are populated.
+        const pool = [...newTasks].sort((a,b) => (b.priorityScore || 0) - (a.priorityScore || 0));
         
-        // Fill based on quotas
-        selectedTasks.push(...tasksByType.new.slice(0, quotas.new));
-        selectedTasks.push(...tasksByType.review.slice(0, quotas.review));
-        selectedTasks.push(...tasksByType.solving.slice(0, quotas.solving));
-
-        // Overflow: If we still have capacity (e.g. not enough 'new' topics), fill with best remaining tasks
-        const remainingCapacity = totalCapacity - selectedTasks.length;
-        if (remainingCapacity > 0) {
-          const alreadySelectedIds = new Set(selectedTasks.map(st => st.id));
-          const leftovers = newTasks
-            .filter(t => !alreadySelectedIds.has(t.id))
-            .sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0));
-          
-          selectedTasks.push(...leftovers.slice(0, remainingCapacity));
-        }
-
-        if (selectedTasks.length > 0) {
-          setTasks(prev => [...selectedTasks, ...prev]);
-        }
+        // Safety cap: Never auto-generate more than 60 tasks at once to keep state lean
+        const finalSelection = pool.slice(0, 60);
+        setTasks(prev => [...finalSelection, ...prev]);
       }
     };
 

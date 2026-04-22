@@ -2509,6 +2509,14 @@ export default function App() {
   };
 
   // Automatic Task Generation
+  // 1. Refresh logic: Clear suggested tasks when core parameters change to allow re-selection
+  useEffect(() => {
+    // When the user changes allocation, weights, or limit, we "clear the deck"
+    // so the auto-generation effect can refill it with tasks that match the new constraints.
+    setTasks(prev => prev.filter(t => t.completed || !t.id.startsWith('auto-')));
+  }, [allocation, weights, dailyTaskLimit]);
+
+  // 2. Generation logic: Refill the dashboard based on Current State
   useEffect(() => {
     const autoGenerateTasks = () => {
       const newTasks: Task[] = [];

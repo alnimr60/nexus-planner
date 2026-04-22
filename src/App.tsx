@@ -148,15 +148,20 @@ const Dashboard = ({
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => l.id === t.lectureId) : null;
         let score = calculatePriorityScore(t, lectures, exams, weights);
-        let type: TaskType = t.type || 'new';
+        let type = t.type;
         
         if (lecture) {
            const breakdown = getCategorizedPriority(lecture, weights);
            score = breakdown.total;
-           type = breakdown.category;
+           if (!type) {
+             type = breakdown.category;
+           }
         }
         
-        return { ...t, priorityScore: score, type };
+        // Final fallback if still no type
+        const finalType: TaskType = type || 'new';
+        
+        return { ...t, priorityScore: score, type: finalType };
       });
 
     // Get tasks completed TODAY
@@ -2714,7 +2719,8 @@ export default function App() {
 
   const handleAllocationChange = (key: keyof DailyAllocation, val: number) => {
     setAllocation(prev => {
-      const keys = ['new', 'review', 'solving'] as const;
+      // Align with UI order: Foundation (new) -> Practice (solving) -> Revision (review)
+      const keys = ['new', 'solving', 'review'] as const;
       const others = keys.filter(k => k !== key);
       const newVal = Math.min(100, Math.max(0, val));
       const remaining = 100 - newVal;
@@ -2734,12 +2740,12 @@ export default function App() {
         });
       }
       
-      // Final adjustment for rounding precision
+      // Final adjustment for rounding precision - apply to the largest 'other' for stability
       const finalTotal = next.new + next.review + next.solving;
       if (finalTotal !== 100) {
         const adjustment = 100 - finalTotal;
-        // Apply to the first 'other' to finalize
-        next[others[0]] += adjustment;
+        const targetKey = others.sort((a, b) => next[b] - next[a])[0];
+        next[targetKey] += adjustment;
       }
       
       return next;

@@ -167,39 +167,66 @@ const Dashboard = ({
       new Date(t.completedDate) < nextDay
     );
 
+    const sortedIncomplete = [...incompleteTasks].sort((a,b) => (b.priorityScore || 0) - (a.priorityScore || 0));
+
+    // Helper to pick tasks based on quota and allocation
+    const getSelectedForQuota = (pool: any[], quota: number) => {
+      if (quota <= 0) return [];
+      const newTasks = pool.filter(p => p.type === 'new');
+      const reviewTasks = pool.filter(p => p.type === 'review');
+      const solvingTasks = pool.filter(p => p.type === 'solving');
+      
+      const newQuota = Math.max(0, Math.round(quota * (allocation.new / 100)));
+      const reviewQuota = Math.max(0, Math.round(quota * (allocation.review / 100)));
+      const solvingQuota = Math.max(0, Math.round(quota * (allocation.solving / 100)));
+
+      const selected = [
+        ...newTasks.slice(0, newQuota),
+        ...reviewTasks.slice(0, reviewQuota),
+        ...solvingTasks.slice(0, solvingQuota)
+      ];
+      
+      const extraNeeded = quota - selected.length;
+      if (extraNeeded > 0) {
+        const alreadySelectedIds = new Set(selected.map(s => s.id));
+        const leftovers = pool.filter(p => !alreadySelectedIds.has(p.id));
+        selected.push(...leftovers.slice(0, extraNeeded));
+      }
+      return selected.slice(0, quota);
+    };
+
     // Today: Balanced Daily Quota
     if (day === 'today') {
-      const quota = dailyTaskLimit;
-      const finalTasks: any[] = [...completedToday];
-      
-      const sortedIncomplete = [...incompleteTasks].sort((a,b) => (b.priorityScore || 0) - (a.priorityScore || 0));
-      const newTasks = sortedIncomplete.filter(t => t.type === 'new');
-      const reviewTasks = sortedIncomplete.filter(t => t.type === 'review');
-      const solvingTasks = sortedIncomplete.filter(t => t.type === 'solving');
-      
-      const newQuota = Math.max(1, Math.round(quota * (allocation.new / 100)));
-      const reviewQuota = Math.max(1, Math.round(quota * (allocation.review / 100)));
-      const solvingQuota = Math.max(1, Math.round(quota * (allocation.solving / 100)));
-
-      const remainingFill = Math.max(0, quota - completedToday.length);
-      if (remainingFill > 0) {
-        const selected = [
-          ...newTasks.slice(0, newQuota),
-          ...reviewTasks.slice(0, reviewQuota),
-          ...solvingTasks.slice(0, solvingQuota)
-        ];
-        const extraNeeded = remainingFill - selected.length;
-        if (extraNeeded > 0) {
-          const alreadySelectedIds = new Set(selected.map(s => s.id));
-          const leftovers = sortedIncomplete.filter(t => !alreadySelectedIds.has(t.id));
-          selected.push(...leftovers.slice(0, extraNeeded));
-        }
-        finalTasks.push(...selected.slice(0, remainingFill));
-      }
-      return finalTasks;
+      const remainingFill = Math.max(0, dailyTaskLimit - completedToday.length);
+      const selected = getSelectedForQuota(sortedIncomplete, remainingFill);
+      return [...completedToday, ...selected];
     }
     
-    return [...incompleteTasks].sort((a,b) => (b.priorityScore || 0) - (a.priorityScore || 0)).slice(0, 5);
+    // Tomorrow: The "Next" tasks after Today's projection
+    if (day === 'tomorrow') {
+      const remainingTodayCount = Math.max(0, dailyTaskLimit - completedToday.length);
+      const todaySelected = getSelectedForQuota(sortedIncomplete, remainingTodayCount);
+      const todaySelectedIds = new Set(todaySelected.map(s => s.id));
+      
+      const poolForTomorrow = sortedIncomplete.filter(p => !todaySelectedIds.has(p.id));
+      return getSelectedForQuota(poolForTomorrow, dailyTaskLimit);
+    }
+
+    // After Tomorrow: The batch after Tomorrow's projection
+    if (day === 'after') {
+      const remainingTodayCount = Math.max(0, dailyTaskLimit - completedToday.length);
+      const todaySelected = getSelectedForQuota(sortedIncomplete, remainingTodayCount);
+      const todaySelectedIds = new Set(todaySelected.map(s => s.id));
+      
+      const poolForTomorrow = sortedIncomplete.filter(p => !todaySelectedIds.has(p.id));
+      const tomorrowSelected = getSelectedForQuota(poolForTomorrow, dailyTaskLimit);
+      const tomorrowSelectedIds = new Set(tomorrowSelected.map(s => s.id));
+
+      const poolForAfter = poolForTomorrow.filter(p => !tomorrowSelectedIds.has(p.id));
+      return getSelectedForQuota(poolForAfter, dailyTaskLimit);
+    }
+    
+    return sortedIncomplete.slice(0, 5);
   };
 
   const dayTasks = getTasksForDay(selectedDay);

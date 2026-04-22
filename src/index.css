@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-focus-bg: #050A18;
+  --color-focus-card: rgba(255, 255, 255, 0.05);
+  --color-focus-border: rgba(255, 255, 255, 0.12);
+  --color-focus-cyan: #00F2FF;
+  --color-focus-gold: #FFD700;
+  --color-focus-slate: #8E9299;
+  --color-focus-text: #FFFFFF;
+}
+
+@layer base {
+  body {
+    @apply bg-focus-bg text-focus-text font-sans antialiased selection:bg-focus-cyan/30;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-focus-card backdrop-blur-[16px] border border-focus-border;
+  }
+  
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
+  }
+  
+  .glow-gold {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Force the native date picker indicator to fill the entire input area */
+  /* This ensures clicking ANYWHERE on the input triggers the calendar */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+  }
+}

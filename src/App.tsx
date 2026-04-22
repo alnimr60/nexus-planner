@@ -388,8 +388,8 @@ const Dashboard = ({
                 </div>
                 <div className="flex gap-1 h-2 rounded-full overflow-hidden bg-white/5">
                   <div className="bg-focus-cyan shadow-[0_0_10px_rgba(0,242,255,0.3)] transition-all duration-1000" style={{ width: `${allocation.new}%` }} />
-                  <div className="bg-focus-gold shadow-[0_0_10px_rgba(255,215,0,0.3)] transition-all duration-1000" style={{ width: `${allocation.review}%` }} />
                   <div className="bg-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.3)] transition-all duration-1000" style={{ width: `${allocation.solving}%` }} />
+                  <div className="bg-focus-gold shadow-[0_0_10px_rgba(255,215,0,0.3)] transition-all duration-1000" style={{ width: `${allocation.review}%` }} />
                 </div>
               </GlassCard>
             )}
@@ -1766,19 +1766,19 @@ const PriorityEngine = ({
       ]
     },
     {
-      title: t.revision,
-      factors: [
-        { key: 'reviewMastery', label: `${t.mastery} (M)`, description: t.mastery_desc, icon: Brain, color: 'text-focus-gold' },
-        { key: 'reviewCount', label: `${t.reviews} (R)`, description: t.freq_desc, icon: History, color: 'text-focus-gold' },
-        { key: 'reviewStaleness', label: t.staleness, description: t.period_desc, icon: TrendingUp, color: 'text-focus-gold' },
-      ]
-    },
-    {
       title: t.solving,
       factors: [
         { key: 'solvingAccuracy', label: `${t.accuracy} (A)`, description: t.solver_desc, icon: Trophy, color: 'text-purple-400' },
         { key: 'solvingDifficulty', label: `${t.complexity} (S)`, description: t.boost_desc, icon: Zap, color: 'text-purple-400' },
         { key: 'solvingStaleness', label: t.gap_time, description: t.attempt_desc, icon: Calendar, color: 'text-purple-400' },
+      ]
+    },
+    {
+      title: t.revision,
+      factors: [
+        { key: 'reviewMastery', label: `${t.mastery} (M)`, description: t.mastery_desc, icon: Brain, color: 'text-focus-gold' },
+        { key: 'reviewCount', label: `${t.reviews} (R)`, description: t.freq_desc, icon: History, color: 'text-focus-gold' },
+        { key: 'reviewStaleness', label: t.staleness, description: t.period_desc, icon: TrendingUp, color: 'text-focus-gold' },
       ]
     }
   ] as const;
@@ -1823,18 +1823,21 @@ const PriorityEngine = ({
               <span>{t.time_allocation}</span>
             </div>
             <div className="flex gap-1 h-3 rounded-full overflow-hidden bg-white/5">
-              <div className="bg-focus-cyan transition-all" style={{ width: `${allocation.new}%` }} />
-              <div className="bg-focus-gold transition-all" style={{ width: `${allocation.review}%` }} />
-              <div className="bg-purple-400 transition-all" style={{ width: `${allocation.solving}%` }} />
+              <div className="bg-focus-cyan transition-all duration-300" style={{ width: `${allocation.new}%` }} />
+              <div className="bg-purple-400 transition-all duration-300" style={{ width: `${allocation.solving}%` }} />
+              <div className="bg-focus-gold transition-all duration-300" style={{ width: `${allocation.review}%` }} />
             </div>
             <div className="grid grid-cols-3 gap-4">
-              {(['new', 'review', 'solving'] as const).map(key => (
+              {(['new', 'solving', 'review'] as const).map(key => (
                 <div key={key} className="space-y-2">
                   <div className="flex flex-col items-center gap-1 min-h-[3rem] justify-end">
                     <span className="text-[8px] font-bold uppercase text-focus-slate text-center leading-tight">
-                      {key === 'new' ? t.foundation : key === 'review' ? t.revision : t.solving}
+                      {key === 'new' ? t.foundation : key === 'solving' ? t.solving : t.revision}
                     </span>
-                    <span className="text-xs font-mono text-focus-cyan">{allocation[key]}%</span>
+                    <span className={cn(
+                      "text-xs font-mono",
+                      key === 'new' ? "text-focus-cyan" : key === 'solving' ? "text-purple-400" : "text-focus-gold"
+                    )}>{allocation[key]}%</span>
                   </div>
                   <input 
                     type="range" min="0" max="100" step="5"
@@ -1842,7 +1845,7 @@ const PriorityEngine = ({
                     onChange={(e) => onAllocationChange(key, parseInt(e.target.value))}
                     className={cn(
                       "w-full h-1 bg-white/5 rounded-full appearance-none cursor-pointer",
-                      key === 'new' ? "accent-focus-cyan" : key === 'review' ? "accent-focus-gold" : "accent-purple-400"
+                      key === 'new' ? "accent-focus-cyan" : key === 'solving' ? "accent-purple-400" : "accent-focus-gold"
                     )}
                   />
                 </div>
@@ -2711,18 +2714,35 @@ export default function App() {
 
   const handleAllocationChange = (key: keyof DailyAllocation, val: number) => {
     setAllocation(prev => {
-      const next = { ...prev, [key]: isFinite(val) ? val : 0 };
-      // Distribute remaining % to others if sum != 100?
-      // For simplicity, let's just let the user adjust it, or auto-balance
-      const total = next.new + next.review + next.solving;
-      if (total === 0) return next;
-      // Auto-normalize
-      const factor = 100 / total;
-      return {
-        new: Math.round(next.new * factor),
-        review: Math.round(next.review * factor),
-        solving: Math.round(next.solving * factor)
-      };
+      const keys = ['new', 'review', 'solving'] as const;
+      const others = keys.filter(k => k !== key);
+      const newVal = Math.min(100, Math.max(0, val));
+      const remaining = 100 - newVal;
+      
+      const prevOthersTotal = others.reduce((sum, k) => sum + prev[k], 0);
+      
+      const next = { ...prev, [key]: newVal };
+      
+      if (prevOthersTotal === 0) {
+        // Equal split if others were zero
+        const share = Math.floor(remaining / others.length);
+        others.forEach(k => { next[k] = share; });
+      } else {
+        // Proportional split
+        others.forEach(k => {
+          next[k] = Math.round((prev[k] / prevOthersTotal) * remaining);
+        });
+      }
+      
+      // Final adjustment for rounding precision
+      const finalTotal = next.new + next.review + next.solving;
+      if (finalTotal !== 100) {
+        const adjustment = 100 - finalTotal;
+        // Apply to the first 'other' to finalize
+        next[others[0]] += adjustment;
+      }
+      
+      return next;
     });
   };
 

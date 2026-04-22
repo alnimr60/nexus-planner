@@ -427,7 +427,12 @@ const Dashboard = ({
                       </div>
                       {dayTasks.filter(t_task => (t_task.priorityScore || 0) > 70).map(task => (
                         <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-focus-gold shadow-[0_0_10px_rgba(255,215,0,0.5)]" />
+                          <div className={cn(
+                            "absolute left-0 top-0 bottom-0 w-1 shadow-lg transition-all duration-500",
+                            task.type === 'review' ? "bg-focus-gold shadow-[0_0_10px_rgba(255,215,0,0.4)]" : 
+                            task.type === 'solving' ? "bg-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.4)]" : 
+                            "bg-focus-cyan shadow-[0_0_10px_rgba(0,242,255,0.4)]"
+                          )} />
                           <button onClick={() => onToggleTask(task.id)} className="text-focus-slate group-hover:text-focus-cyan">
                             {task.completed ? <CheckCircle2 size={20} className="text-focus-cyan" /> : <Circle size={20} />}
                           </button>
@@ -466,7 +471,13 @@ const Dashboard = ({
                       </div>
                       {dayTasks.filter(t_task => (t_task.priorityScore || 0) <= 70).map(task => (
                         <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
-                          <div className={cn("absolute left-0 top-0 bottom-0 w-1", selectedDay === 'yesterday' ? "bg-green-400" : (task.priorityScore || 0) > 40 ? "bg-focus-cyan" : "bg-focus-slate")} />
+                          <div className={cn(
+                            "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
+                            selectedDay === 'yesterday' ? "bg-green-400" : 
+                            task.type === 'review' ? "bg-focus-gold" : 
+                            task.type === 'solving' ? "bg-purple-400" : 
+                            "bg-focus-cyan"
+                          )} />
                           <button onClick={() => onToggleTask(task.id)} className={cn("transition-colors", selectedDay === 'yesterday' ? "text-green-400" : "text-focus-slate group-hover:text-focus-cyan")}>
                             {task.completed ? <CheckCircle2 size={20} className="text-focus-cyan" /> : <Circle size={20} />}
                           </button>
@@ -1217,16 +1228,16 @@ const LibraryScreen = ({
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: subject?.color }}>{subject?.name}</span>
                           <span className="text-[10px] text-focus-slate font-mono">{lecture.pageCount}{language === 'ar' ? 'ص' : 'p'} • {new Date(lecture.date).toLocaleDateString(language === 'ar' ? 'ar-EG' : undefined, { month: 'short', day: 'numeric' })}</span>
-                          <div className="flex items-center gap-2 ml-1">
-                            <div className="flex items-center gap-0.5" title={t.revision}>
-                              <History size={10} className="text-focus-cyan" />
-                              <span className="text-[10px] font-mono text-focus-cyan">{lecture.studyCount || 0}</span>
+                            <div className="flex items-center gap-2 ml-1">
+                              <div className="flex items-center gap-0.5" title={t.revision}>
+                                <History size={10} className="text-focus-gold" />
+                                <span className="text-[10px] font-mono text-focus-gold">{lecture.studyCount || 0}</span>
+                              </div>
+                              <div className="flex items-center gap-0.5" title={t.solving}>
+                                <Target size={10} className="text-purple-400" />
+                                <span className="text-[10px] font-mono text-purple-400">{lecture.practiceCount || 0}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-0.5" title={t.solving}>
-                              <Target size={10} className="text-focus-gold" />
-                              <span className="text-[10px] font-mono text-focus-gold">{lecture.practiceCount || 0}</span>
-                            </div>
-                          </div>
                         </div>
                       </div>
                   </div>
@@ -2569,7 +2580,7 @@ export default function App() {
           if (!hasExisting('new')) {
             newTasks.push({
               id: `auto-new-${lecture.id}-${Date.now()}`,
-              title: `Study: ${lecture.title}`,
+              title: `${t.study_prefix || 'Study'}: ${lecture.title}`,
               dueDate: new Date().toISOString(),
               priority: scores.new > 80 ? 'high' : 'medium',
               completed: false,
@@ -2586,7 +2597,7 @@ export default function App() {
           if (!hasExisting('solving')) {
             newTasks.push({
               id: `auto-solve-${lecture.id}-${Date.now()}`,
-              title: `Practice: ${lecture.title}`,
+              title: `${t.practice_prefix || 'Practice'}: ${lecture.title}`,
               dueDate: new Date().toISOString(),
               priority: scores.solving > 75 ? 'high' : 'medium',
               completed: false,
@@ -2603,7 +2614,7 @@ export default function App() {
           if (!hasExisting('review')) {
             newTasks.push({
               id: `auto-review-${lecture.id}-${Date.now()}`,
-              title: `Revision: ${lecture.title}`,
+              title: `${t.revision_prefix || 'Revision'}: ${lecture.title}`,
               dueDate: new Date().toISOString(),
               priority: scores.review > 85 ? 'high' : 'medium',
               completed: false,

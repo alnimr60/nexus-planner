@@ -2763,7 +2763,7 @@ export default function App() {
       const existingTaskMap = new Map<string, Task>();
       tasks.forEach(t => {
         if (t.lectureId) {
-          const key = `${t.lectureId}-${t.type}-${t.completed}`;
+          const key = `${String(t.lectureId)}-${t.type}-${t.completed}`;
           existingTaskMap.set(key, t);
         }
       });
@@ -2773,10 +2773,10 @@ export default function App() {
         const { scores } = breakdown;
         
         const hasExisting = (type: TaskType) => {
-          const keyIncomplete = `${lecture.id}-${type}-false`;
+          const keyIncomplete = `${String(lecture.id)}-${type}-false`;
           if (existingTaskMap.has(keyIncomplete)) return true;
 
-          const keyComplete = `${lecture.id}-${type}-true`;
+          const keyComplete = `${String(lecture.id)}-${type}-true`;
           const completedTask = existingTaskMap.get(keyComplete);
           if (completedTask && completedTask.completedDate) {
             const completedTime = new Date(completedTask.completedDate).getTime();
@@ -2860,13 +2860,13 @@ export default function App() {
   const toggleTask = (id: string) => {
     setTasks(prev => {
       const updatedTasks = prev.map(t => {
-        if (t.id === id) {
+        if (String(t.id) === String(id)) {
           const completed = !t.completed;
           
           // Side Effect: Update Lecture progress/study count if it's an auto-task
           if (completed && t.lectureId) {
             setLectures(prevLectures => prevLectures.map(l => {
-              if (l.id === t.lectureId) {
+              if (String(l.id) === String(t.lectureId)) {
                 const now = new Date().toISOString();
                 const currentProgress = l.progress || 0;
 
@@ -2979,8 +2979,8 @@ export default function App() {
   };
 
   const deleteSubject = (id: string) => {
-    setSubjects(prev => prev.filter(s => s.id !== id));
-    setLectures(prev => prev.filter(l => l.subjectId !== id));
+    setSubjects(prev => prev.filter(s => String(s.id) !== String(id)));
+    setLectures(prev => prev.filter(l => String(l.subjectId) !== String(id)));
     setEditingSubject(null);
   };
 
@@ -3007,7 +3007,7 @@ export default function App() {
   };
 
   const updateLecture = (updated: Lecture) => {
-    setLectures(prev => prev.map(l => l.id === updated.id ? updated : l));
+    setLectures(prev => prev.map(l => String(l.id) === String(updated.id) ? updated : l));
     
     // Sync tasks: If lecture is manually updated to be studied/practiced, remove relevant suggested tasks
     setTasks(prev => prev.filter(t => {
@@ -3027,12 +3027,12 @@ export default function App() {
   };
 
   const deleteLecture = (id: string) => {
-    setLectures(prev => prev.filter(l => l.id !== id));
+    setLectures(prev => prev.filter(l => String(l.id) !== String(id)));
     setExams(prev => prev.map(e => ({
       ...e,
-      linkedLectureIds: e.linkedLectureIds.filter(lid => lid !== id)
+      linkedLectureIds: e.linkedLectureIds.filter(lid => String(lid) !== String(id))
     })));
-    setTasks(prev => prev.filter(t => t.lectureId !== id));
+    setTasks(prev => prev.filter(t => String(t.lectureId) !== String(id)));
     setEditingLecture(null);
   };
 
@@ -3672,7 +3672,7 @@ export default function App() {
                       </span>
                       {task.lectureId && (
                         <span className="text-[8px] px-1.5 py-0.5 rounded bg-focus-cyan/10 text-focus-cyan font-mono truncate">
-                          {lectures.find(l => l.id === task.lectureId)?.title}
+                          {lectures.find(l => String(l.id) === String(task.lectureId))?.title}
                         </span>
                       )}
                     </div>

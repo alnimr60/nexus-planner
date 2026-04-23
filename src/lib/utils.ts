@@ -163,8 +163,6 @@ export function getCategorizedPriority(
   };
 
   // GLOBAL SATURATION PENALTY
-  // If we worked on this lecture today, we apply a massive penalty to allow others a turn.
-  // This prevents one lecture from "taking that right from another".
   const lastTouchDays = Math.min(
     getDaysSince(lecture.lastReviewDate),
     getDaysSince(lecture.lastPracticeDate)
@@ -173,9 +171,8 @@ export function getCategorizedPriority(
   let finalMultiplier = lastTouchDays < 0.8 ? 0.15 : 1.0;
 
   // EXAM PROXIMITY BOOST
-  // If an exam is coming up, we boost the priority of all linked lectures.
   const linkedExams = exams.filter(e => 
-    e.linkedLectureIds.includes(lecture.id) || lecture.examId === e.id
+    e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   if (linkedExams.length > 0) {
@@ -195,10 +192,8 @@ export function getCategorizedPriority(
   scores.review = Math.round(scores.review * finalMultiplier);
 
   // --- SPIRAL MAINTENANCE LOGIC (FOR PREVIOUS ROUNDS) ---
-  // If the lecture belongs to a previous round, we apply a "Persistence Boost"
-  // to ensure old material stays in the loop, while discouraging "New" sessions.
-  const parentSubject = subjects.find(s => s.id === lecture.subjectId);
-  const isPastRound = parentSubject?.round !== undefined && parentSubject.round < currentRound;
+  const parentSubject = subjects.find(s => String(s.id) === String(lecture.subjectId));
+  const isPastRound = parentSubject?.round !== undefined && Number(parentSubject.round) < currentRound;
   if (isPastRound) {
     // 1.5x boost to review/solve for old rounds effectively keeps them prioritized
     // even as their raw recency decays.
@@ -335,7 +330,7 @@ export function calculatePriorityScore(
   let rawScore = 0;
 
   if (task.lectureId) {
-    const lecture = lectures.find(l => l.id === task.lectureId);
+    const lecture = lectures.find(l => String(l.id) === String(task.lectureId));
     if (lecture) {
       const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
       rawScore = breakdown.total;

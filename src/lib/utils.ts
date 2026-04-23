@@ -33,6 +33,7 @@ export type Lecture = {
   abandonedSessionsCount: number;
   relatedLectureIds: string[];
   week?: number;
+  round?: number;
 };
 
 export type Exam = {
@@ -95,7 +96,9 @@ export interface CategoryPriorityBreakdown {
 export function getCategorizedPriority(
   lecture: Lecture,
   weights: PriorityWeights,
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  exams: Exam[] = [],
+  currentRound: number = 1
 ): CategoryPriorityBreakdown {
   const now = Date.now();
   
@@ -120,36 +123,88 @@ export function getCategorizedPriority(
   // 1. NEW LECTURES (S, C, T)
   const currentWeek = getCurrentWeek();
   const weeksDiff = lecture.week ? (currentWeek - lecture.week) : (getDaysSince(lecture.date) / 7);
-  // Ensure we don't have negative days for future weeks, but also don't hit 0 too hard
+  // Ensure we don't have negative days for future weeks
   const daysSinceTaken = Math.max(0, weeksDiff * 7);
   
   const newS = (lecture.difficulty || 0.5) * (weights.newDifficulty || 0);
   const newC = Math.min(1, (lecture.pageCount || 0) / 30) * (weights.newSize || 0);
   
-  // More forgiving recency decay: 100% at 0 days, 10% at 21 days
-  const recencyMultiplier = Math.max(0.1, 1 - (daysSinceTaken / 21));
+  // Recency decay for new topics: prioritize recent lectures but allow old ones to stay relevant
+  const recencyMultiplier = Math.max(0.2, 1 - (daysSinceTaken / 28));
   const newT = recencyMultiplier * (weights.newRecency || 0);
   const newTotal = newS + newC + newT;
 
   // 2. REVIEW (M, R, T_last)
   const masteryM = ((100 - (lecture.selfExamScore ?? 0)) / 100) * (weights.reviewMastery || 0);
-  const reviewR = Math.max(0, 1 - ((lecture.studyCount || 0) / 5)) * (weights.reviewCount || 0);
+  
+  // Revision Persistence: Don't "throw away" after 5 reviews. 
+  // We use a logarithmic decay that never truly hits zero.
+  const reviewCountFactor = 1 / (1 + Math.log10(1 + (lecture.studyCount || 0)));
+  const reviewR = reviewCountFactor * (weights.reviewCount || 0);
+  
   const daysSinceLastReview = getDaysSince(lecture.lastReviewDate);
-  const reviewTLast = Math.min(1, daysSinceLastReview / 14) * (weights.reviewStaleness || 0);
-  const reviewTotal = masteryM + reviewR + reviewTLast;
+  // Higher sensitivity to staleness for reviews (10 days instead of 14)
+  const reviewTLast = Math.min(1, daysSinceLastReview / 10) * (weights.reviewStaleness || 0);
+  const reviewTotal = (masteryM + reviewR + reviewTLast) * (lecture.progress || 1);
 
   // 3. SOLVING (A, S, T_last)
   const accuracyA = ((100 - (lecture.lastAccuracy ?? 80)) / 100) * (weights.solvingAccuracy || 0);
   const solveS = (lecture.difficulty || 0.5) * (weights.solvingDifficulty || 0);
   const daysSinceLastSolve = getDaysSince(lecture.lastPracticeDate);
-  const solveTLast = Math.min(1, daysSinceLastSolve / 21) * (weights.solvingStaleness || 0);
-  const solveTotal = accuracyA + solveS + solveTLast;
+  // Higher sensitivity to staleness for solving
+  const solveTLast = Math.min(1, daysSinceLastSolve / 14) * (weights.solvingStaleness || 0);
+  const solveTotal = (accuracyA + solveS + solveTLast) * (lecture.progress || 1);
 
   const scores = {
     new: isFinite(newTotal) ? Math.round(newTotal) : 0,
     solving: isFinite(solveTotal) ? Math.round(solveTotal) : 0,
     review: isFinite(reviewTotal) ? Math.round(reviewTotal) : 0
   };
+
+  // GLOBAL SATURATION PENALTY
+  // If we worked on this lecture today, we apply a massive penalty to allow others a turn.
+  // This prevents one lecture from "taking that right from another".
+  const lastTouchDays = Math.min(
+    getDaysSince(lecture.lastReviewDate),
+    getDaysSince(lecture.lastPracticeDate)
+  );
+
+  let finalMultiplier = lastTouchDays < 0.8 ? 0.15 : 1.0;
+
+  // EXAM PROXIMITY BOOST
+  // If an exam is coming up, we boost the priority of all linked lectures.
+  const linkedExams = exams.filter(e => 
+    e.linkedLectureIds.includes(lecture.id) || lecture.examId === e.id
+  ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  if (linkedExams.length > 0) {
+    const nextExam = linkedExams[0];
+    const examTime = new Date(nextExam.date).getTime();
+    const daysUntilExam = (examTime - now) / (1000 * 60 * 60 * 24);
+
+    if (daysUntilExam >= 0 && daysUntilExam <= 14) {
+      // Scale from 1.5x at 14 days to 4.0x at 0 days
+      const proximityBoost = 1.5 + (1 - (daysUntilExam / 14)) * 2.5;
+      finalMultiplier *= proximityBoost;
+    }
+  }
+  
+  scores.new = Math.round(scores.new * finalMultiplier);
+  scores.solving = Math.round(scores.solving * finalMultiplier);
+  scores.review = Math.round(scores.review * finalMultiplier);
+
+  // --- SPIRAL MAINTENANCE LOGIC (FOR PREVIOUS ROUNDS) ---
+  // If the lecture belongs to a previous round, we apply a "Persistence Boost"
+  // to ensure old material stays in the loop, while discouraging "New" sessions.
+  const isPastRound = lecture.round !== undefined && lecture.round < currentRound;
+  if (isPastRound) {
+    // 1.5x boost to review/solve for old rounds effectively keeps them prioritized
+    // even as their raw recency decays.
+    scores.review = Math.round(scores.review * 1.5);
+    scores.solving = Math.round(scores.solving * 1.5);
+    // 0.2x penalty to "New" study for old rounds (assume foundations are done)
+    scores.new = Math.round(scores.new * 0.2);
+  }
 
   const safeVal = (v: number) => isFinite(v) ? v : 0;
 
@@ -197,9 +252,10 @@ export function getLecturePriorityScore(
   lectures: Lecture[],
   exams: Exam[],
   weights: PriorityWeights,
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  currentRound: number = 1
 ): number {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
   return Math.round(breakdown.total);
 }
 
@@ -269,14 +325,15 @@ export function calculatePriorityScore(
     solvingDifficulty: 30,
     solvingStaleness: 30
   },
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  currentRound: number = 1
 ): number {
   let rawScore = 0;
 
   if (task.lectureId) {
     const lecture = lectures.find(l => l.id === task.lectureId);
     if (lecture) {
-      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
+      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
       rawScore = breakdown.total;
     }
   } else {

@@ -103,6 +103,7 @@ const Dashboard = ({
   onOpenBulkImport,
   focusScore,
   dailyTaskLimit,
+  currentRound,
   t,
   language,
   semesterStartDate
@@ -121,6 +122,7 @@ const Dashboard = ({
   onOpenBulkImport: () => void,
   focusScore: number,
   dailyTaskLimit: number,
+  currentRound: number,
   t: any,
   language: Language,
   semesterStartDate?: string
@@ -149,12 +151,11 @@ const Dashboard = ({
       .filter(t => !t.completed)
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => l.id === t.lectureId) : null;
-        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate);
+        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound);
         let type = t.type;
         
         if (lecture) {
-           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
-           score = breakdown.total;
+           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
            if (!type) {
              type = breakdown.category;
            }
@@ -593,14 +594,16 @@ const Dashboard = ({
   );
 };
 
-const PriorityBreakdown = ({ lecture, weights, t, language, semesterStartDate }: { 
+const PriorityBreakdown = ({ lecture, weights, exams, currentRound, t, language, semesterStartDate }: { 
   lecture: Lecture, 
   weights: PriorityWeights, 
+  exams: Exam[],
+  currentRound: number,
   t: any, 
   language: Language,
   semesterStartDate?: string
 }) => {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
   
   return (
     <div className="glass p-4 rounded-xl space-y-3 border border-white/5">
@@ -665,6 +668,7 @@ const LectureIntelligenceForm = ({
   lectures,
   exams,
   weights,
+  currentRound,
   onSave, 
   onDelete,
   t,
@@ -676,6 +680,7 @@ const LectureIntelligenceForm = ({
   lectures: Lecture[],
   exams: Exam[],
   weights: PriorityWeights,
+  currentRound: number,
   onSave: (updated: Lecture) => void, 
   onDelete: (id: string) => void,
   t: any,
@@ -739,6 +744,8 @@ const LectureIntelligenceForm = ({
       <PriorityBreakdown 
         lecture={formData} 
         weights={weights} 
+        exams={exams}
+        currentRound={currentRound}
         t={t} 
         language={language} 
         semesterStartDate={semesterStartDate} 
@@ -779,6 +786,19 @@ const LectureIntelligenceForm = ({
               min="1"
               max="52"
               value={formData.week || ''} 
+              onChange={handleChange}
+              placeholder="e.g. 1"
+              className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" 
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">{t.round}</label>
+            <input 
+              name="round" 
+              type="number" 
+              min="1"
+              max="10"
+              value={formData.round || ''} 
               onChange={handleChange}
               placeholder="e.g. 1"
               className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" 
@@ -1003,6 +1023,7 @@ const LibraryScreen = ({
   lectures, 
   exams,
   weights,
+  currentRound,
   onAddSubject, 
   onAddLecture, 
   onEditLecture,
@@ -1016,6 +1037,7 @@ const LibraryScreen = ({
   lectures: Lecture[], 
   exams: Exam[],
   weights: PriorityWeights,
+  currentRound: number,
   onAddSubject: () => void, 
   onAddLecture: () => void, 
   onEditLecture: (lecture: Lecture) => void,
@@ -1246,7 +1268,7 @@ const LibraryScreen = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredLectures.length > 0 ? (
             filteredLectures.map(lecture => {
-              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate);
+              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, currentRound);
               const subject = subjects.find(s => s.id === lecture.subjectId);
               const isSelected = selectedLectureIds.includes(lecture.id);
 
@@ -1789,6 +1811,8 @@ const PriorityEngine = ({
   onToggleAI,
   dailyTaskLimit,
   onDailyTaskLimitChange,
+  currentRound,
+  onCurrentRoundChange,
   language,
   onLanguageChange,
   onOpenTutorial,
@@ -1809,6 +1833,8 @@ const PriorityEngine = ({
   onToggleAI: (val: boolean) => void,
   dailyTaskLimit: number,
   onDailyTaskLimitChange: (val: number) => void,
+  currentRound: number,
+  onCurrentRoundChange: (val: number) => void,
   language: Language,
   onLanguageChange: (val: Language) => void,
   onOpenTutorial: () => void,
@@ -1926,6 +1952,22 @@ const PriorityEngine = ({
                 className="w-full h-1 bg-white/5 rounded-full appearance-none cursor-pointer accent-focus-cyan"
               />
               <p className="text-[10px] text-focus-slate text-center">{t.quota_hint}</p>
+            </div>
+          </GlassCard>
+
+          <GlassCard id="current-round-card" className="p-6 space-y-6">
+            <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-focus-slate">
+              <span>{t.current_round}</span>
+              <span className="text-purple-400">{t.round || 'Round'} {currentRound}</span>
+            </div>
+            <div className="space-y-4">
+              <input 
+                type="range" min="1" max="10" step="1"
+                value={currentRound}
+                onChange={(e) => onCurrentRoundChange(parseInt(e.target.value))}
+                className="w-full h-1 bg-white/5 rounded-full appearance-none cursor-pointer accent-purple-400"
+              />
+              <p className="text-[10px] text-focus-slate text-center">{t.round_desc}</p>
             </div>
           </GlassCard>
         </div>
@@ -2602,6 +2644,16 @@ export default function App() {
     return d.toISOString().split('T')[0];
   });
 
+  const [currentRound, setCurrentRound] = useState<number>(() => {
+    const saved = localStorage.getItem('focus_current_round');
+    const parsed = saved ? JSON.parse(saved) : 1;
+    return isFinite(parsed) ? parsed : 1;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('focus_current_round', JSON.stringify(currentRound));
+  }, [currentRound]);
+
   const [profiles, setProfiles] = useState<{ name: string, weights: PriorityWeights }[]>(() => {
     const saved = localStorage.getItem('focus_profiles');
     const defaultWeights = {
@@ -2699,10 +2751,10 @@ export default function App() {
       now.setHours(0, 0, 0, 0);
 
       lectures.forEach(lecture => {
-        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate);
+        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
         const { scores } = breakdown;
         
-        // Helper to check if a task of a certain type already exists for this lecture
+        // Helper to check if a task of a certain type already exists for this lecture (Recently completed or open)
         const hasExisting = (type: TaskType) => {
           return tasks.some(t => 
             t.lectureId === lecture.id && 
@@ -2711,55 +2763,59 @@ export default function App() {
           );
         };
 
-        // 1. FOUNDATION (New Topics) - Focus: Study
-        // Only trigger if we have NEVER studied it
-        if (lecture.progress < 1 && scores.new > 10 && (lecture.studyCount || 0) === 0) {
+        // We determine the candidate tasks for this lecture
+        const candidates: { type: TaskType, score: number, title: string, priority: 'high' | 'medium' | 'low' }[] = [];
+
+        // 1. FOUNDATION Candidate
+        if (lecture.progress < 1 && scores.new > 15 && (lecture.studyCount || 0) === 0) {
           if (!hasExisting('new')) {
-            newTasks.push({
-              id: `auto-new-${lecture.id}-${Date.now()}`,
+            candidates.push({
+              type: 'new',
+              score: scores.new,
               title: `${t.study_prefix || 'Study'}: ${lecture.title}`,
-              dueDate: new Date().toISOString(),
-              priority: scores.new > 80 ? 'high' : 'medium',
-              completed: false,
-              lectureId: lecture.id,
-              priorityScore: scores.new,
-              type: 'new'
+              priority: scores.new > 80 ? 'high' : 'medium'
             });
           }
         } 
         
-        // 2. STRATEGIC SOLVE (Practice) - Focus: Practice
-        // Now triggers if we've studied at least once, or have manual progress
-        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 10) {
+        // 2. STRATEGIC SOLVE Candidate
+        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 15) {
           if (!hasExisting('solving')) {
-            newTasks.push({
-              id: `auto-solve-${lecture.id}-${Date.now()}`,
+            candidates.push({
+              type: 'solving',
+              score: scores.solving,
               title: `${t.practice_prefix || 'Practice'}: ${lecture.title}`,
-              dueDate: new Date().toISOString(),
-              priority: scores.solving > 75 ? 'high' : 'medium',
-              completed: false,
-              lectureId: lecture.id,
-              priorityScore: scores.solving,
-              type: 'solving'
+              priority: scores.solving > 75 ? 'high' : 'medium'
             });
           }
         }
 
-        // 3. DEEP REVIEW (Revision) - Focus: Revision
-        // Now triggers if we've studied at least once
-        if (lecture.studyCount > 0 && scores.review > 10) {
+        // 3. DEEP REVIEW Candidate
+        if (lecture.studyCount > 0 && scores.review > 15) {
           if (!hasExisting('review')) {
-            newTasks.push({
-              id: `auto-review-${lecture.id}-${Date.now()}`,
+            candidates.push({
+              type: 'review',
+              score: scores.review,
               title: `${t.revision_prefix || 'Revision'}: ${lecture.title}`,
-              dueDate: new Date().toISOString(),
-              priority: scores.review > 85 ? 'high' : 'medium',
-              completed: false,
-              lectureId: lecture.id,
-              priorityScore: scores.review,
-              type: 'review'
+              priority: scores.review > 85 ? 'high' : 'medium'
             });
           }
+        }
+
+        // SELECTION LOGIC: Pick the SINGLE most important task for this lecture today.
+        // This prevents one lecture from "taking that right from another" by hogging multiple slots.
+        if (candidates.length > 0) {
+          const best = candidates.sort((a,b) => b.score - a.score)[0];
+          newTasks.push({
+            id: `auto-${best.type}-${lecture.id}-${Date.now()}`,
+            title: best.title,
+            dueDate: new Date().toISOString(),
+            priority: best.priority,
+            completed: false,
+            lectureId: lecture.id,
+            priorityScore: best.score,
+            type: best.type
+          });
         }
       });
 
@@ -3375,6 +3431,7 @@ export default function App() {
                 onOpenBulkImport={() => setIsBulkImportOpen(true)}
                 focusScore={focusScore}
                 dailyTaskLimit={dailyTaskLimit}
+                currentRound={currentRound}
                 t={t}
                 language={language}
                 semesterStartDate={semesterStartDate}
@@ -3388,6 +3445,7 @@ export default function App() {
                 lectures={lectures} 
                 exams={exams}
                 weights={weights}
+                currentRound={currentRound}
                 onAddSubject={() => setIsAddSubjectOpen(true)}
                 onAddLecture={() => setIsAddLectureOpen(true)}
                 onEditLecture={(lecture) => setEditingLecture(lecture)}
@@ -3447,6 +3505,8 @@ export default function App() {
                 onToggleAI={setIsAIEnabled}
                 dailyTaskLimit={dailyTaskLimit}
                 onDailyTaskLimitChange={setDailyTaskLimit}
+                currentRound={currentRound}
+                onCurrentRoundChange={setCurrentRound}
                 language={language}
                 onLanguageChange={setLanguage}
                 onOpenTutorial={() => setIsTutorialOpen(true)}
@@ -3564,7 +3624,7 @@ export default function App() {
             {tasks
               .filter(t => taskFilter === 'active' ? !t.completed : t.completed)
               .filter(t => t.title.toLowerCase().includes(taskSearch.toLowerCase()))
-              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate) }))
+              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound) }))
               .sort((a, b) => (b.score || 0) - (a.score || 0))
               .map(task => (
                 <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl border border-white/5">
@@ -3775,6 +3835,7 @@ export default function App() {
             lectures={lectures}
             exams={exams}
             weights={weights}
+            currentRound={currentRound}
             semesterStartDate={semesterStartDate}
             onSave={(updated) => {
               updateLecture(updated);

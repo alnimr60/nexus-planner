@@ -168,7 +168,7 @@ export function getCategorizedPriority(
     getDaysSince(lecture.lastPracticeDate)
   );
 
-  let finalMultiplier = lastTouchDays < 0.8 ? 0.15 : 1.0;
+  let finalMultiplier = lastTouchDays < 0.8 ? 0.4 : 1.0;
 
   // EXAM PROXIMITY BOOST
   const linkedExams = exams.filter(e => 
@@ -306,7 +306,7 @@ export function calculateFocusScore(
 // 1. To Linearize: Set CONTRAST_FACTOR to 1.0.
 // 2. To Compress: Set CONTRAST_FACTOR between 0.5 and 0.9.
 // 3. To Restore Legacy: Revert to returning rawScore directly.
-const CONTRAST_FACTOR = 1.25;
+const CONTRAST_FACTOR = 1.1;
 
 export function calculatePriorityScore(
   task: Task,

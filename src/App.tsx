@@ -150,7 +150,7 @@ const Dashboard = ({
     const incompleteTasks = tasks
       .filter(t => !t.completed)
       .map(t => {
-        const lecture = t.lectureId ? lectures.find(l => l.id === t.lectureId) : null;
+        const lecture = t.lectureId ? lectures.find(l => String(l.id) === String(t.lectureId)) : null;
         let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects);
         let type = t.type;
         
@@ -434,7 +434,7 @@ const Dashboard = ({
                         <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-focus-gold">{t.critical_focus}</span>
                       </div>
                       {dayTasks.filter(t_task => (t_task.priorityScore || 0) > 70).map(task => {
-                        const lecture = task.lectureId ? lectures.find(l => l.id === task.lectureId) : null;
+                        const lecture = task.lectureId ? lectures.find(l => String(l.id) === String(task.lectureId)) : null;
                         return (
                           <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
                             <div className={cn(
@@ -487,7 +487,7 @@ const Dashboard = ({
                         <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-focus-slate">{t.standard_stream}</span>
                       </div>
                       {dayTasks.filter(t_task => (t_task.priorityScore || 0) <= 70).map(task => {
-                        const lecture = task.lectureId ? lectures.find(l => l.id === task.lectureId) : null;
+                        const lecture = task.lectureId ? lectures.find(l => String(l.id) === String(task.lectureId)) : null;
                         return (
                           <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl group hover:bg-white/10 transition-colors relative overflow-hidden">
                             <div className={cn(
@@ -1049,7 +1049,7 @@ const LibraryScreen = ({
 
   const filteredLectures = lectures.filter(l => {
     const matchesSearch = l.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         subjects.find(s => s.id === l.subjectId)?.name.toLowerCase().includes(searchTerm.toLowerCase());
+                         subjects.find(s => String(s.id) === String(l.subjectId))?.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSubject = selectedSubjectId ? l.subjectId === selectedSubjectId : true;
     const matchesTab = 
       activeTab === 'all' ? true :
@@ -1064,7 +1064,7 @@ const LibraryScreen = ({
       e.stopPropagation();
     }
     setSelectedLectureIds(prev => 
-      prev.includes(id) ? prev.filter(lid => lid !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter(lid => String(lid) !== String(id)) : [...prev, id]
     );
   };
 
@@ -1249,7 +1249,7 @@ const LibraryScreen = ({
       <div id="lecture-list-container" className="space-y-4 pt-4">
         <div className="flex justify-between items-center px-1">
           <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-focus-slate">
-            {selectedSubjectId ? `${subjects.find(s => s.id === selectedSubjectId)?.name} ${t.stream}` : t.full_stream}
+            {selectedSubjectId ? `${subjects.find(s => String(s.id) === String(selectedSubjectId))?.name} ${t.stream}` : t.full_stream}
           </h2>
           <span className="text-[10px] font-mono text-focus-slate">{filteredLectures.length} {t.results}</span>
         </div>
@@ -1258,7 +1258,7 @@ const LibraryScreen = ({
           {filteredLectures.length > 0 ? (
             filteredLectures.map(lecture => {
               const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, currentRound, subjects);
-              const subject = subjects.find(s => s.id === lecture.subjectId);
+              const subject = subjects.find(s => String(s.id) === String(lecture.subjectId));
               const isSelected = selectedLectureIds.includes(lecture.id);
 
               return (
@@ -1587,7 +1587,7 @@ const ExamForm = ({
   const toggleLecture = (lectureId: string) => {
     setFormData(prev => {
       const linked = prev.linkedLectureIds.includes(lectureId)
-        ? prev.linkedLectureIds.filter(id => id !== lectureId)
+        ? prev.linkedLectureIds.filter(id => String(id) !== String(lectureId))
         : [...prev.linkedLectureIds, lectureId];
       return { ...prev, linkedLectureIds: linked };
     });
@@ -2592,7 +2592,20 @@ export default function App() {
     if (!saved) return defaultWeights;
     try {
       const parsed = JSON.parse(saved);
+      // Migration: Map old keys to new schema if they exist
+      const migrationMap: any = {
+        foundationDifficulty: 'newDifficulty',
+        foundationSize: 'newSize',
+        foundationRecency: 'newRecency'
+      };
+      
       const sanitized: any = {};
+      Object.keys(migrationMap).forEach(oldKey => {
+        if (parsed[oldKey] !== undefined && parsed[migrationMap[oldKey]] === undefined) {
+          parsed[migrationMap[oldKey]] = parsed[oldKey];
+        }
+      });
+      
       Object.keys(defaultWeights).forEach(key => {
         const val = parsed[key];
         sanitized[key] = isFinite(val) ? val : (defaultWeights as any)[key];
@@ -2756,74 +2769,45 @@ export default function App() {
   useEffect(() => {
     const autoGenerateTasks = () => {
       const gTasks: Task[] = [];
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-
-      // Pre-calculate existence map for O(1) lookups inside the loop
-      const existingTaskMap = new Map<string, Task>();
-      tasks.forEach(t => {
-        if (t.lectureId) {
-          const key = `${String(t.lectureId)}-${t.type}-${t.completed}`;
-          existingTaskMap.set(key, t);
-        }
-      });
-
+      
       lectures.forEach(lecture => {
         const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
         const { scores } = breakdown;
         
-        const hasExisting = (type: TaskType) => {
-          const keyIncomplete = `${String(lecture.id)}-${type}-false`;
-          if (existingTaskMap.has(keyIncomplete)) return true;
-
-          const keyComplete = `${String(lecture.id)}-${type}-true`;
-          const completedTask = existingTaskMap.get(keyComplete);
-          if (completedTask && completedTask.completedDate) {
-            const completedTime = new Date(completedTask.completedDate).getTime();
-            if (completedTime > Date.now() - 24 * 60 * 60 * 1000) return true;
-          }
-          return false;
-        };
-
         const candidates: { type: TaskType, score: number, title: string, priority: 'high' | 'medium' | 'low' }[] = [];
 
-        if (lecture.progress < 1 && scores.new > 15 && (lecture.studyCount || 0) === 0) {
-          if (!hasExisting('new')) {
-            candidates.push({
-              type: 'new',
-              score: scores.new,
-              title: `${t.study_prefix || 'Study'}: ${lecture.title}`,
-              priority: scores.new > 80 ? 'high' : 'medium'
-            });
-          }
+        // Relaxed thresholds (2 instead of 5) for better topic persistence
+        if (lecture.progress < 1 && scores.new > 2 && (lecture.studyCount || 0) === 0) {
+          candidates.push({
+            type: 'new',
+            score: scores.new,
+            title: `${t.study_prefix || 'Study'}: ${lecture.title}`,
+            priority: scores.new > 80 ? 'high' : 'medium'
+          });
         } 
         
-        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 15) {
-          if (!hasExisting('solving')) {
-            candidates.push({
-              type: 'solving',
-              score: scores.solving,
-              title: `${t.practice_prefix || 'Practice'}: ${lecture.title}`,
-              priority: scores.solving > 75 ? 'high' : 'medium'
-            });
-          }
+        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 2) {
+          candidates.push({
+            type: 'solving',
+            score: scores.solving,
+            title: `${t.practice_prefix || 'Practice'}: ${lecture.title}`,
+            priority: scores.solving > 75 ? 'high' : 'medium'
+          });
         }
 
-        if (lecture.studyCount > 0 && scores.review > 15) {
-          if (!hasExisting('review')) {
-            candidates.push({
-              type: 'review',
-              score: scores.review,
-              title: `${t.revision_prefix || 'Revision'}: ${lecture.title}`,
-              priority: scores.review > 85 ? 'high' : 'medium'
-            });
-          }
+        if (lecture.studyCount > 0 && scores.review > 2) {
+          candidates.push({
+            type: 'review',
+            score: scores.review,
+            title: `${t.revision_prefix || 'Revision'}: ${lecture.title}`,
+            priority: scores.review > 85 ? 'high' : 'medium'
+          });
         }
 
         if (candidates.length > 0) {
           const best = candidates.sort((a,b) => b.score - a.score)[0];
           gTasks.push({
-            id: `auto-${best.type}-${lecture.id}`,
+            id: `auto-${best.type}-${String(lecture.id)}`,
             title: best.title,
             dueDate: new Date().toISOString(),
             priority: best.priority,
@@ -2838,24 +2822,31 @@ export default function App() {
       if (gTasks.length > 0) {
         setTasks(prev => {
           const merged = new Map<string, Task>();
-          // Put existing first (preserves manual ones and their completion status)
           prev.forEach(t => merged.set(t.id, t));
-          // Overwrite with fresh auto-suggestions (but ONLY if truly new or if we want to refresh scores)
-          gTasks.forEach(t => {
-            if (!merged.has(t.id)) {
-              merged.set(t.id, t);
-            }
+
+          // Removed the 24h lockout to ensure the system is always suggestible if scores > threshold
+          const finalToAdd = gTasks.filter(gt => {
+             const type = gt.type!;
+             const lectureId = String(gt.lectureId);
+             
+             // Check if we already have an incomplete one of this type
+             const existingIncomplete = prev.find(pt => !pt.completed && String(pt.lectureId) === lectureId && pt.type === type);
+             if (existingIncomplete) return false;
+
+             return true;
           });
-          
-          if (merged.size === prev.length) return prev;
+
+          if (finalToAdd.length === 0) return prev;
+
+          finalToAdd.forEach(t => merged.set(t.id, t));
           return Array.from(merged.values());
         });
       }
     };
 
-    const timer = setTimeout(autoGenerateTasks, 1500); 
+    const timer = setTimeout(autoGenerateTasks, 500); 
     return () => clearTimeout(timer);
-  }, [lectures, exams, weights, tasks, allocation, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
+  }, [lectures, exams, weights, allocation, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
 
   const toggleTask = (id: string) => {
     setTasks(prev => {
@@ -2974,7 +2965,7 @@ export default function App() {
   };
 
   const updateSubject = (updated: Subject) => {
-    setSubjects(prev => prev.map(s => s.id === updated.id ? updated : s));
+    setSubjects(prev => prev.map(s => String(s.id) === String(updated.id) ? updated : s));
     setEditingSubject(null);
   };
 
@@ -3081,12 +3072,12 @@ export default function App() {
   };
 
   const updateExam = (updated: Exam) => {
-    setExams(prev => prev.map(e => e.id === updated.id ? updated : e));
+    setExams(prev => prev.map(e => String(e.id) === String(updated.id) ? updated : e));
     setEditingExam(null);
   };
 
   const deleteExam = (id: string) => {
-    setExams(prev => prev.filter(e => e.id !== id));
+    setExams(prev => prev.filter(e => String(e.id) !== String(id)));
     setEditingExam(null);
   };
 
@@ -3444,7 +3435,7 @@ export default function App() {
                 allocation={allocation}
                 onToggleTask={toggleTask}
                 onPartialTask={(lectureId) => {
-                  const lecture = lectures.find(l => l.id === lectureId);
+                  const lecture = lectures.find(l => String(l.id) === String(lectureId));
                   if (lecture) {
                     setEditingLecture(lecture);
                   }
@@ -3678,7 +3669,7 @@ export default function App() {
                     </div>
                   </div>
                   <button 
-                    onClick={() => setTasks(prev => prev.filter(t => t.id !== task.id))}
+                    onClick={() => setTasks(prev => prev.filter(t => String(t.id) !== String(task.id)))}
                     className="p-1.5 text-focus-slate hover:text-red-400 transition-colors"
                   >
                     <Trash2 size={14} />

@@ -10,6 +10,7 @@ export type Subject = {
   name: string;
   color: string;
   coverage: number; // 0-100
+  round?: number;
 };
 
 export type Lecture = {
@@ -33,7 +34,6 @@ export type Lecture = {
   abandonedSessionsCount: number;
   relatedLectureIds: string[];
   week?: number;
-  round?: number;
 };
 
 export type Exam = {
@@ -98,7 +98,8 @@ export function getCategorizedPriority(
   weights: PriorityWeights,
   semesterStartDate?: string,
   exams: Exam[] = [],
-  currentRound: number = 1
+  currentRound: number = 1,
+  subjects: Subject[] = []
 ): CategoryPriorityBreakdown {
   const now = Date.now();
   
@@ -196,7 +197,8 @@ export function getCategorizedPriority(
   // --- SPIRAL MAINTENANCE LOGIC (FOR PREVIOUS ROUNDS) ---
   // If the lecture belongs to a previous round, we apply a "Persistence Boost"
   // to ensure old material stays in the loop, while discouraging "New" sessions.
-  const isPastRound = lecture.round !== undefined && lecture.round < currentRound;
+  const parentSubject = subjects.find(s => s.id === lecture.subjectId);
+  const isPastRound = parentSubject?.round !== undefined && parentSubject.round < currentRound;
   if (isPastRound) {
     // 1.5x boost to review/solve for old rounds effectively keeps them prioritized
     // even as their raw recency decays.
@@ -253,9 +255,10 @@ export function getLecturePriorityScore(
   exams: Exam[],
   weights: PriorityWeights,
   semesterStartDate?: string,
-  currentRound: number = 1
+  currentRound: number = 1,
+  subjects: Subject[] = []
 ): number {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
   return Math.round(breakdown.total);
 }
 
@@ -326,14 +329,15 @@ export function calculatePriorityScore(
     solvingStaleness: 30
   },
   semesterStartDate?: string,
-  currentRound: number = 1
+  currentRound: number = 1,
+  subjects: Subject[] = []
 ): number {
   let rawScore = 0;
 
   if (task.lectureId) {
     const lecture = lectures.find(l => l.id === task.lectureId);
     if (lecture) {
-      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
+      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
       rawScore = breakdown.total;
     }
   } else {

@@ -151,11 +151,11 @@ const Dashboard = ({
       .filter(t => !t.completed)
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => l.id === t.lectureId) : null;
-        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound);
+        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects);
         let type = t.type;
         
         if (lecture) {
-           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
+           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
            if (!type) {
              type = breakdown.category;
            }
@@ -594,16 +594,17 @@ const Dashboard = ({
   );
 };
 
-const PriorityBreakdown = ({ lecture, weights, exams, currentRound, t, language, semesterStartDate }: { 
+const PriorityBreakdown = ({ lecture, subjects, weights, exams, currentRound, t, language, semesterStartDate }: { 
   lecture: Lecture, 
+  subjects: Subject[],
   weights: PriorityWeights, 
   exams: Exam[],
   currentRound: number,
   t: any, 
-  language: Language,
-  semesterStartDate?: string
+  language: Language, 
+  semesterStartDate?: string 
 }) => {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
   
   return (
     <div className="glass p-4 rounded-xl space-y-3 border border-white/5">
@@ -743,6 +744,7 @@ const LectureIntelligenceForm = ({
     }} className="space-y-6">
       <PriorityBreakdown 
         lecture={formData} 
+        subjects={subjects}
         weights={weights} 
         exams={exams}
         currentRound={currentRound}
@@ -786,19 +788,6 @@ const LectureIntelligenceForm = ({
               min="1"
               max="52"
               value={formData.week || ''} 
-              onChange={handleChange}
-              placeholder="e.g. 1"
-              className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" 
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">{t.round}</label>
-            <input 
-              name="round" 
-              type="number" 
-              min="1"
-              max="10"
-              value={formData.round || ''} 
               onChange={handleChange}
               placeholder="e.g. 1"
               className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" 
@@ -1268,7 +1257,7 @@ const LibraryScreen = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredLectures.length > 0 ? (
             filteredLectures.map(lecture => {
-              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, currentRound);
+              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, currentRound, subjects);
               const subject = subjects.find(s => s.id === lecture.subjectId);
               const isSelected = selectedLectureIds.includes(lecture.id);
 
@@ -2751,7 +2740,7 @@ export default function App() {
       now.setHours(0, 0, 0, 0);
 
       lectures.forEach(lecture => {
-        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound);
+        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
         const { scores } = breakdown;
         
         // Helper to check if a task of a certain type already exists for this lecture (Recently completed or open)
@@ -2833,7 +2822,7 @@ export default function App() {
 
     const timer = setTimeout(autoGenerateTasks, 1500); // 1.5s delay to avoid race conditions
     return () => clearTimeout(timer);
-  }, [lectures, exams, weights, tasks, allocation, dailyTaskLimit, semesterStartDate]);
+  }, [lectures, exams, weights, tasks, allocation, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
 
   const toggleTask = (id: string) => {
     setTasks(prev => {
@@ -2937,14 +2926,15 @@ export default function App() {
     });
   };
 
-  const addSubject = (name: string) => {
+  const addSubject = (name: string, round: number = 1) => {
     const colors = ['#00F2FF', '#FFD700', '#FF4D4D', '#4DFF4D', '#FF4DFF', '#FFA500'];
     const color = colors[subjects.length % colors.length];
     const newSubject: Subject = {
       id: Math.random().toString(36).substr(2, 9),
       name,
       color,
-      coverage: 0
+      coverage: 0,
+      round
     };
     setSubjects(prev => [...prev, newSubject]);
     setIsAddSubjectOpen(false);
@@ -3624,7 +3614,7 @@ export default function App() {
             {tasks
               .filter(t => taskFilter === 'active' ? !t.completed : t.completed)
               .filter(t => t.title.toLowerCase().includes(taskSearch.toLowerCase()))
-              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound) }))
+              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects) }))
               .sort((a, b) => (b.score || 0) - (a.score || 0))
               .map(task => (
                 <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl border border-white/5">
@@ -3778,14 +3768,20 @@ export default function App() {
       <Modal isOpen={isAddSubjectOpen} onClose={() => setIsAddSubjectOpen(false)} title="Add New Subject">
         <form onSubmit={(e) => {
           e.preventDefault();
-          const name = (e.currentTarget.elements.namedItem('name') as HTMLInputElement).value;
-          addSubject(name);
+          const formData = new FormData(e.currentTarget);
+          const name = formData.get('name') as string;
+          const round = parseInt(formData.get('round') as string);
+          addSubject(name, round);
         }} className="space-y-4">
           <div>
             <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">Subject Name</label>
             <input name="name" type="text" required className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" placeholder="e.g. Computer Science" />
           </div>
-          <button type="submit" className="w-full bg-focus-cyan text-focus-bg py-3 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-white transition-colors">Create Subject</button>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">{t.round}</label>
+            <input name="round" type="number" defaultValue="1" min="1" max="10" className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" />
+          </div>
+          <button type="submit" className="w-full bg-focus-cyan text-focus-bg py-3 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-white transition-all shadow-[0_8px_24px_rgba(0,242,255,0.2)]">Create Subject</button>
         </form>
       </Modal>
 
@@ -3928,12 +3924,17 @@ export default function App() {
             updateSubject({
               ...editingSubject,
               name: formData.get('name') as string,
-              color: formData.get('color') as string
+              color: formData.get('color') as string,
+              round: parseInt(formData.get('round') as string)
             });
           }} className="space-y-6">
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">Subject Name</label>
               <input name="name" type="text" defaultValue={editingSubject.name} required className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">{t.round}</label>
+              <input name="round" type="number" defaultValue={editingSubject.round || 1} min="1" max="10" className="w-full glass border-focus-border rounded-xl p-3 text-sm focus:ring-1 focus:ring-focus-cyan outline-none" />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-2">Theme Color</label>

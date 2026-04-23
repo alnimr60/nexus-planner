@@ -342,10 +342,12 @@ export function calculatePriorityScore(
     }
   } else {
     // Fallback for non-lecture tasks
-    const daysUntilDue = (new Date(task.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    const dueDateUnix = task.dueDate ? new Date(task.dueDate).getTime() : NaN;
+    const daysUntilDue = isNaN(dueDateUnix) ? 7 : (dueDateUnix - Date.now()) / (1000 * 60 * 60 * 24);
     const urgency = Math.max(0, 1 - (daysUntilDue / 14));
     const manualPriorityMap = { high: 0.8, medium: 0.5, low: 0.2 };
-    rawScore = (urgency * 0.7 + manualPriorityMap[task.priority] * 0.3) * 100;
+    const pValue = task.priority ? manualPriorityMap[task.priority] : 0.5;
+    rawScore = (urgency * 0.7 + pValue * 0.3) * 100;
   }
 
   // --- THE SPREAD EQUATION ---

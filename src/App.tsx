@@ -2677,14 +2677,19 @@ export default function App() {
   });
 
   useEffect(() => {
-    // ONE-TIME CLEANUP: Remove duplicate auto-tasks with timestamps from previous bug
+    // ONE-TIME CLEANUP: Remove duplicate auto-tasks from previous bug
     setTasks(prev => {
       const unique = new Map<string, Task>();
       prev.forEach(t => {
-        // If it's a legacy auto-task with a timestamp (longer ID), we prioritize newer ones or just keep it if it's the first one we find
-        const baseId = t.id.startsWith('auto-') ? t.id.split('-').slice(0, 3).join('-') : t.id;
-        if (!unique.has(baseId)) {
-          unique.set(baseId, t);
+        // Safe deduplication key:
+        // For auto-tasks, we only want ONE of each type per lecture.
+        // For manual tasks, we use their existing unique ID.
+        const key = (t.id.startsWith('auto-') && t.lectureId) 
+          ? `auto-${t.type}-${t.lectureId}` 
+          : t.id;
+          
+        if (!unique.has(key)) {
+          unique.set(key, t);
         }
       });
       return Array.from(unique.values());
@@ -2742,35 +2747,46 @@ export default function App() {
   // Automatic Task Generation
   // 1. Refresh logic: Clear suggested tasks when core parameters change to allow re-selection
   useEffect(() => {
-    // When the user changes allocation, weights, or limit, we "clear the deck"
+    // When the user changes allocation, weights, limit, or academic stage, we "clear the deck"
     // so the auto-generation effect can refill it with tasks that match the new constraints.
     setTasks(prev => prev.filter(t => t.completed || !t.id.startsWith('auto-')));
-  }, [allocation, weights, dailyTaskLimit, semesterStartDate]);
+  }, [allocation, weights, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
 
   // 2. Generation logic: Refill the dashboard based on Current State
   useEffect(() => {
     const autoGenerateTasks = () => {
-      const newTasks: Task[] = [];
+      const gTasks: Task[] = [];
       const now = new Date();
       now.setHours(0, 0, 0, 0);
+
+      // Pre-calculate existence map for O(1) lookups inside the loop
+      const existingTaskMap = new Map<string, Task>();
+      tasks.forEach(t => {
+        if (t.lectureId) {
+          const key = `${t.lectureId}-${t.type}-${t.completed}`;
+          existingTaskMap.set(key, t);
+        }
+      });
 
       lectures.forEach(lecture => {
         const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
         const { scores } = breakdown;
         
-        // Helper to check if a task of a certain type already exists for this lecture (Recently completed or open)
         const hasExisting = (type: TaskType) => {
-          return tasks.some(t => 
-            t.lectureId === lecture.id && 
-            t.type === type && 
-            (!t.completed || (t.completedDate && new Date(t.completedDate).getTime() > Date.now() - 24 * 60 * 60 * 1000))
-          );
+          const keyIncomplete = `${lecture.id}-${type}-false`;
+          if (existingTaskMap.has(keyIncomplete)) return true;
+
+          const keyComplete = `${lecture.id}-${type}-true`;
+          const completedTask = existingTaskMap.get(keyComplete);
+          if (completedTask && completedTask.completedDate) {
+            const completedTime = new Date(completedTask.completedDate).getTime();
+            if (completedTime > Date.now() - 24 * 60 * 60 * 1000) return true;
+          }
+          return false;
         };
 
-        // We determine the candidate tasks for this lecture
         const candidates: { type: TaskType, score: number, title: string, priority: 'high' | 'medium' | 'low' }[] = [];
 
-        // 1. FOUNDATION Candidate
         if (lecture.progress < 1 && scores.new > 15 && (lecture.studyCount || 0) === 0) {
           if (!hasExisting('new')) {
             candidates.push({
@@ -2782,7 +2798,6 @@ export default function App() {
           }
         } 
         
-        // 2. STRATEGIC SOLVE Candidate
         if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 15) {
           if (!hasExisting('solving')) {
             candidates.push({
@@ -2794,7 +2809,6 @@ export default function App() {
           }
         }
 
-        // 3. DEEP REVIEW Candidate
         if (lecture.studyCount > 0 && scores.review > 15) {
           if (!hasExisting('review')) {
             candidates.push({
@@ -2806,11 +2820,9 @@ export default function App() {
           }
         }
 
-        // SELECTION LOGIC: Pick the SINGLE most important task for this lecture today.
-        // This prevents one lecture from "taking that right from another" by hogging multiple slots.
         if (candidates.length > 0) {
           const best = candidates.sort((a,b) => b.score - a.score)[0];
-          newTasks.push({
+          gTasks.push({
             id: `auto-${best.type}-${lecture.id}`,
             title: best.title,
             dueDate: new Date().toISOString(),
@@ -2823,19 +2835,25 @@ export default function App() {
         }
       });
 
-      if (newTasks.length > 0) {
-        // We now generate ALL valid tasks discovered (up to a safe buffer) 
-        // and let the Dashboard UI handle the specific daily quota slicing.
-        // This ensures "View All" shows the full roadmap and future days are populated.
-        const pool = [...newTasks].sort((a,b) => (b.priorityScore || 0) - (a.priorityScore || 0));
-        
-        // Safety cap: Never auto-generate more than 60 tasks at once to keep state lean
-        const finalSelection = pool.slice(0, 60);
-        setTasks(prev => [...finalSelection, ...prev]);
+      if (gTasks.length > 0) {
+        setTasks(prev => {
+          const merged = new Map<string, Task>();
+          // Put existing first (preserves manual ones and their completion status)
+          prev.forEach(t => merged.set(t.id, t));
+          // Overwrite with fresh auto-suggestions (but ONLY if truly new or if we want to refresh scores)
+          gTasks.forEach(t => {
+            if (!merged.has(t.id)) {
+              merged.set(t.id, t);
+            }
+          });
+          
+          if (merged.size === prev.length) return prev;
+          return Array.from(merged.values());
+        });
       }
     };
 
-    const timer = setTimeout(autoGenerateTasks, 1500); // 1.5s delay to avoid race conditions
+    const timer = setTimeout(autoGenerateTasks, 1500); 
     return () => clearTimeout(timer);
   }, [lectures, exams, weights, tasks, allocation, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
 
@@ -3630,7 +3648,14 @@ export default function App() {
               .filter(t => taskFilter === 'active' ? !t.completed : t.completed)
               .filter(t => t.title.toLowerCase().includes(taskSearch.toLowerCase()))
               .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects) }))
-              .sort((a, b) => (b.score || 0) - (a.score || 0))
+              .sort((a, b) => {
+                // Pin manual tasks to the top if they have equal or near-equal score
+                const aManual = !a.id.startsWith('auto-');
+                const bManual = !b.id.startsWith('auto-');
+                if (aManual && !bManual) return -1;
+                if (!aManual && bManual) return 1;
+                return (b.score || 0) - (a.score || 0);
+              })
               .map(task => (
                 <div key={task.id} className="flex items-center gap-4 p-4 glass rounded-xl border border-white/5">
                   <button 

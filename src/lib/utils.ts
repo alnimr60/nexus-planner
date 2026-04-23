@@ -123,12 +123,12 @@ export function getCategorizedPriority(
 
   // 1. NEW LECTURES (S, C, T)
   const currentWeek = getCurrentWeek();
-  const weeksDiff = lecture.week ? (currentWeek - lecture.week) : (getDaysSince(lecture.date) / 7);
+  const weeksDiff = lecture.week ? (currentWeek - (Number(lecture.week) || 0)) : (getDaysSince(lecture.date) / 7);
   // Ensure we don't have negative days for future weeks
-  const daysSinceTaken = Math.max(0, weeksDiff * 7);
+  const daysSinceTaken = Math.max(0, (isFinite(weeksDiff) ? weeksDiff : 0) * 7);
   
-  const newS = (lecture.difficulty || 0.5) * (weights.newDifficulty || 0);
-  const newC = Math.min(1, (lecture.pageCount || 0) / 30) * (weights.newSize || 0);
+  const newS = (Number(lecture.difficulty) || 0.5) * (weights.newDifficulty || 0);
+  const newC = Math.min(1, (Number(lecture.pageCount) || 0) / 30) * (weights.newSize || 0);
   
   // Recency decay for new topics: prioritize recent lectures but allow old ones to stay relevant
   const recencyMultiplier = Math.max(0.2, 1 - (daysSinceTaken / 28));

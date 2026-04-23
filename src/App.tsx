@@ -2550,11 +2550,11 @@ export default function App() {
   // App State
   const [subjects, setSubjects] = useState<Subject[]>(() => {
     const saved = localStorage.getItem('focus_subjects');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : MOCK_SUBJECTS;
   });
   const [lectures, setLectures] = useState<Lecture[]>(() => {
     const saved = localStorage.getItem('focus_lectures');
-    const data = saved ? JSON.parse(saved) : [];
+    const data = saved ? JSON.parse(saved) : MOCK_LECTURES;
     return Array.isArray(data) ? data.map(l => ({
       ...l,
       progress: isFinite(l.progress) ? l.progress : 0,
@@ -2566,11 +2566,11 @@ export default function App() {
   });
   const [exams, setExams] = useState<Exam[]>(() => {
     const saved = localStorage.getItem('focus_exams');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : MOCK_EXAMS;
   });
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('focus_tasks');
-    const data = saved ? JSON.parse(saved) : [];
+    const data = saved ? JSON.parse(saved) : MOCK_TASKS;
     return Array.isArray(data) ? data.map(t => ({
       ...t,
       priorityScore: isFinite(t.priorityScore) ? t.priorityScore : 0
@@ -2675,6 +2675,21 @@ export default function App() {
       return defaultProfiles;
     }
   });
+
+  useEffect(() => {
+    // ONE-TIME CLEANUP: Remove duplicate auto-tasks with timestamps from previous bug
+    setTasks(prev => {
+      const unique = new Map<string, Task>();
+      prev.forEach(t => {
+        // If it's a legacy auto-task with a timestamp (longer ID), we prioritize newer ones or just keep it if it's the first one we find
+        const baseId = t.id.startsWith('auto-') ? t.id.split('-').slice(0, 3).join('-') : t.id;
+        if (!unique.has(baseId)) {
+          unique.set(baseId, t);
+        }
+      });
+      return Array.from(unique.values());
+    });
+  }, []); // Run once on mount
 
   useEffect(() => {
     localStorage.setItem('focus_subjects', JSON.stringify(subjects));
@@ -2796,7 +2811,7 @@ export default function App() {
         if (candidates.length > 0) {
           const best = candidates.sort((a,b) => b.score - a.score)[0];
           newTasks.push({
-            id: `auto-${best.type}-${lecture.id}-${Date.now()}`,
+            id: `auto-${best.type}-${lecture.id}`,
             title: best.title,
             dueDate: new Date().toISOString(),
             priority: best.priority,

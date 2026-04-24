@@ -136,7 +136,9 @@ export function getCategorizedPriority(
   const newTotal = newS + newC + newT;
 
   // 2. REVIEW (M, R, T_last)
-  const masteryM = ((100 - (lecture.selfExamScore ?? 0)) / 100) * (weights.reviewMastery || 0);
+  // Mastery M: If selfExamScore is null, we assume a "fresh study" baseline (e.g. 40% mastery)
+  const baseMastery = lecture.selfExamScore ?? 40;
+  const masteryM = ((100 - baseMastery) / 100) * (weights.reviewMastery || 0);
   
   // Revision Persistence: Don't "throw away" after 5 reviews. 
   // We use a logarithmic decay that never truly hits zero.
@@ -147,9 +149,11 @@ export function getCategorizedPriority(
   // Higher sensitivity to staleness for reviews (10 days instead of 14)
   const reviewTLast = Math.min(1, daysSinceLastReview / 10) * (weights.reviewStaleness || 0);
   const reviewTotal = (masteryM + reviewR + reviewTLast) * (lecture.progress || 1);
-
+ 
   // 3. SOLVING (A, S, T_last)
-  const accuracyA = ((100 - (lecture.lastAccuracy ?? 80)) / 100) * (weights.solvingAccuracy || 0);
+  // Accuracy A: If lastAccuracy is null, we assume baseline (e.g. 60% accuracy)
+  const baseAccuracy = lecture.lastAccuracy ?? 60;
+  const accuracyA = ((100 - baseAccuracy) / 100) * (weights.solvingAccuracy || 0);
   const solveS = (lecture.difficulty || 0.5) * (weights.solvingDifficulty || 0);
   const daysSinceLastSolve = getDaysSince(lecture.lastPracticeDate);
   // Higher sensitivity to staleness for solving
@@ -162,15 +166,14 @@ export function getCategorizedPriority(
     review: isFinite(reviewTotal) ? Math.round(reviewTotal) : 0
   };
 
-  // GLOBAL SATURATION PENALTY
-  const lastTouchDays = Math.min(
-    getDaysSince(lecture.lastReviewDate),
-    getDaysSince(lecture.lastPracticeDate)
-  );
+  // 4. SATURATION PENALTY
+  // If we worked on this lecture today, we apply a penalty to allow others a turn.
+  const lastTouchDays = Math.min(daysSinceLastReview, daysSinceLastSolve);
 
+  // If touched very recently (< 0.8 days), apply penalty.
   let finalMultiplier = lastTouchDays < 0.8 ? 0.4 : 1.0;
 
-  // EXAM PROXIMITY BOOST
+  // 5. EXAM PROXIMITY BOOST
   const linkedExams = exams.filter(e => 
     e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -181,65 +184,66 @@ export function getCategorizedPriority(
     const daysUntilExam = (examTime - now) / (1000 * 60 * 60 * 24);
 
     if (daysUntilExam >= 0 && daysUntilExam <= 14) {
-      // Scale from 1.5x at 14 days to 4.0x at 0 days
-      const proximityBoost = 1.5 + (1 - (daysUntilExam / 14)) * 2.5;
+      // Scale from 1.5x at 14 days to 4.5x at 0 days
+      const proximityBoost = 1.5 + (1 - (daysUntilExam / 14)) * 3.0;
       finalMultiplier *= proximityBoost;
     }
   }
-  
-  scores.new = Math.round(scores.new * finalMultiplier);
-  scores.solving = Math.round(scores.solving * finalMultiplier);
-  scores.review = Math.round(scores.review * finalMultiplier);
 
   // --- SPIRAL MAINTENANCE LOGIC (FOR PREVIOUS ROUNDS) ---
   const parentSubject = subjects.find(s => String(s.id) === String(lecture.subjectId));
   const isPastRound = parentSubject?.round !== undefined && Number(parentSubject.round) < currentRound;
+  
   if (isPastRound) {
     // 1.5x boost to review/solve for old rounds effectively keeps them prioritized
-    // even as their raw recency decays.
     scores.review = Math.round(scores.review * 1.5);
     scores.solving = Math.round(scores.solving * 1.5);
-    // 0.2x penalty to "New" study for old rounds (assume foundations are done)
+    // 0.2x penalty to "New" study for old rounds
     scores.new = Math.round(scores.new * 0.2);
   }
 
   const safeVal = (v: number) => isFinite(v) ? v : 0;
 
-  // Determine primary category for UI breakdown
-  // Foundation (New): If never studied or progress is very low
+  // CATEGORY SELECTION
+  // A. NEW (Foundation)
   if ((lecture.studyCount || 0) === 0 && (lecture.progress || 0) < 0.5) {
+    const finalNewScore = Math.round(scores.new * finalMultiplier);
     return {
       category: 'new',
-      scores,
+      scores: { ...scores, new: finalNewScore },
       component1: { label: 'Difficulty (S)', score: safeVal(newS) },
       component2: { label: 'Size (C)', score: safeVal(newC) },
       component3: { label: 'Recency (T)', score: safeVal(newT) },
       modifiers: 0,
-      total: scores.new
+      total: finalNewScore
     };
   } 
   
-  // Decide between Solving and Review based on practice status and scores
-  // If we haven't practiced much yet, or solving score is explicitly higher
-  if (!lecture.practiceDone || (lecture.practiceCount || 0) < 1 || solveTotal > reviewTotal) {
+  // B. SOLVING vs REVIEW ( Strategic Pipeline Bias )
+  const practiceDone = lecture.practiceDone || (lecture.practiceCount || 0) >= 1;
+  const solvingMultiplier = practiceDone ? 1.0 : 1.8; // Even stronger boost to ensure solving happens
+  
+  if (!practiceDone || (solveTotal * solvingMultiplier) > reviewTotal) {
+    const finalSolvingScore = Math.round(scores.solving * finalMultiplier * (practiceDone ? 1 : 1.8));
     return {
       category: 'solving',
-      scores,
+      scores: { ...scores, solving: finalSolvingScore },
       component1: { label: 'Accuracy (A)', score: safeVal(accuracyA) },
       component2: { label: 'Difficulty (S)', score: safeVal(solveS) },
       component3: { label: 'Staleness', score: safeVal(solveTLast) },
-      modifiers: 0,
-      total: scores.solving
+      modifiers: practiceDone ? 0 : 0.8,
+      total: finalSolvingScore
     };
   } else {
+    const finalReviewScore = Math.round(scores.review * finalMultiplier);
     return {
       category: 'review',
-      scores,
+      scores: { ...scores, review: finalReviewScore },
       component1: { label: 'Mastery (M)', score: safeVal(masteryM) },
       component2: { label: 'Reviews (R)', score: safeVal(reviewR) },
       component3: { label: 'Staleness', score: safeVal(reviewTLast) },
       modifiers: 0,
-      total: scores.review
+      total: finalReviewScore
     };
   }
 }

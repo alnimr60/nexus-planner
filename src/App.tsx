@@ -2772,50 +2772,35 @@ export default function App() {
       
       lectures.forEach(lecture => {
         const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
-        const { scores } = breakdown;
+        const { category, total } = breakdown;
         
-        const candidates: { type: TaskType, score: number, title: string, priority: 'high' | 'medium' | 'low' }[] = [];
+        if (total > 2) {
+          let title = "";
+          let priority: 'high' | 'medium' | 'low' = 'medium';
 
-        // Relaxed thresholds (2 instead of 5) for better topic persistence
-        if (lecture.progress < 1 && scores.new > 2 && (lecture.studyCount || 0) === 0) {
-          candidates.push({
-            type: 'new',
-            score: scores.new,
-            title: `${t.study_prefix || 'Study'}: ${lecture.title}`,
-            priority: scores.new > 80 ? 'high' : 'medium'
-          });
-        } 
-        
-        if ((lecture.studyCount > 0 || lecture.progress > 0.3) && scores.solving > 2) {
-          candidates.push({
-            type: 'solving',
-            score: scores.solving,
-            title: `${t.practice_prefix || 'Practice'}: ${lecture.title}`,
-            priority: scores.solving > 75 ? 'high' : 'medium'
-          });
-        }
+          if (category === 'new') {
+            title = `${t.study_prefix || 'Study'}: ${lecture.title}`;
+            priority = total > 80 ? 'high' : 'medium';
+          } else if (category === 'solving') {
+            title = `${t.practice_prefix || 'Practice'}: ${lecture.title}`;
+            priority = total > 75 ? 'high' : 'medium';
+          } else if (category === 'review') {
+            title = `${t.revision_prefix || 'Revision'}: ${lecture.title}`;
+            priority = total > 85 ? 'high' : 'medium';
+          }
 
-        if (lecture.studyCount > 0 && scores.review > 2) {
-          candidates.push({
-            type: 'review',
-            score: scores.review,
-            title: `${t.revision_prefix || 'Revision'}: ${lecture.title}`,
-            priority: scores.review > 85 ? 'high' : 'medium'
-          });
-        }
-
-        if (candidates.length > 0) {
-          const best = candidates.sort((a,b) => b.score - a.score)[0];
-          gTasks.push({
-            id: `auto-${best.type}-${String(lecture.id)}`,
-            title: best.title,
-            dueDate: new Date().toISOString(),
-            priority: best.priority,
-            completed: false,
-            lectureId: lecture.id,
-            priorityScore: best.score,
-            type: best.type
-          });
+          if (title) {
+            gTasks.push({
+              id: `auto-${category}-${String(lecture.id)}`,
+              title: title,
+              dueDate: new Date().toISOString(),
+              priority: priority,
+              completed: false,
+              lectureId: lecture.id,
+              priorityScore: total,
+              type: category
+            });
+          }
         }
       });
 
@@ -2824,7 +2809,8 @@ export default function App() {
           const merged = new Map<string, Task>();
           prev.forEach(t => merged.set(t.id, t));
 
-          // Removed the 24h lockout to ensure the system is always suggestible if scores > threshold
+          // Cooldown check: Don't re-suggest if an incomplete version exists, 
+          // OR if a completed version was finished very recently (8h cooldown).
           const finalToAdd = gTasks.filter(gt => {
              const type = gt.type!;
              const lectureId = String(gt.lectureId);
@@ -2832,6 +2818,13 @@ export default function App() {
              // Check if we already have an incomplete one of this type
              const existingIncomplete = prev.find(pt => !pt.completed && String(pt.lectureId) === lectureId && pt.type === type);
              if (existingIncomplete) return false;
+
+             // Check if we finished one recently (8h lockout to prevent immediate respawn after completion)
+             const existingComplete = prev.find(pt => pt.completed && String(pt.lectureId) === lectureId && pt.type === type);
+             if (existingComplete && existingComplete.completedDate) {
+                const completedTime = new Date(existingComplete.completedDate).getTime();
+                if (Date.now() - completedTime < 8 * 60 * 60 * 1000) return false;
+             }
 
              return true;
           });
@@ -2885,7 +2878,7 @@ export default function App() {
                     ...l, 
                     studyCount: nextStudyCount, 
                     lastReviewDate: now,
-                    progress: (nextStudyCount === 1 && currentProgress < 0.25) ? 0.25 : currentProgress
+                    progress: 1.0
                   };
                 }
               }

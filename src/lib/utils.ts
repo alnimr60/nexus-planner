@@ -135,30 +135,34 @@ export function getCategorizedPriority(
   const newT = recencyMultiplier * (weights.newRecency || 0);
   const newTotal = newS + newC + newT;
 
-  // 2. REVIEW (M, R, T_last)
-  // Mastery M: If selfExamScore is null, we assume a "fresh study" baseline (e.g. 40% mastery)
+  // 2. REVISION (Scientific Spaced Repetition - Maintenance)
+  // Mastery M: If selfExamScore is null, we assume a "fresh study" baseline
   const baseMastery = lecture.selfExamScore ?? 40;
   const masteryM = ((100 - baseMastery) / 100) * (weights.reviewMastery || 0);
   
-  // Revision Persistence: Don't "throw away" after 5 reviews. 
-  // We use a logarithmic decay that never truly hits zero.
-  const reviewCountFactor = 1 / (1 + Math.log10(1 + (lecture.studyCount || 0)));
-  const reviewR = reviewCountFactor * (weights.reviewCount || 0);
-  
+  // Spaced Repetition Interval (SRI): Intervals grow as you review more.
+  const reviews = lecture.studyCount || 0;
+  const retentionInterval = 1 + (reviews * 3.0); // Grows: 1, 4, 7, 10 days...
   const daysSinceLastReview = getDaysSince(lecture.lastReviewDate);
-  // Higher sensitivity to staleness for reviews (10 days instead of 14)
-  const reviewTLast = Math.min(1, daysSinceLastReview / 10) * (weights.reviewStaleness || 0);
+  const reviewStaleness = Math.min(2.0, daysSinceLastReview / retentionInterval);
+  
+  const reviewR = (1 / (1 + Math.log10(1 + reviews))) * (weights.reviewCount || 0);
+  const reviewTLast = reviewStaleness * (weights.reviewStaleness || 0);
   const reviewTotal = (masteryM + reviewR + reviewTLast) * (lecture.progress || 1);
  
-  // 3. SOLVING (A, S, T_last)
-  // Accuracy A: If lastAccuracy is null, we assume baseline (e.g. 60% accuracy)
-  const baseAccuracy = lecture.lastAccuracy ?? 60;
+  // 3. PRACTICE (Interleaved Retrieval Practice - GOLD STANDARD)
+  const baseAccuracy = lecture.lastAccuracy ?? 50;
   const accuracyA = ((100 - baseAccuracy) / 100) * (weights.solvingAccuracy || 0);
   const solveS = (lecture.difficulty || 0.5) * (weights.solvingDifficulty || 0);
+  
+  // Practice happens much more frequently than revision.
+  const practiceInterval = 1 + (lecture.practiceCount || 0) * 1.5; // Shorter intervals (Scientific: Retrieval Emphasis)
   const daysSinceLastSolve = getDaysSince(lecture.lastPracticeDate);
-  // Higher sensitivity to staleness for solving
-  const solveTLast = Math.min(1, daysSinceLastSolve / 14) * (weights.solvingStaleness || 0);
-  const solveTotal = (accuracyA + solveS + solveTLast) * (lecture.progress || 1);
+  const solveStaleness = Math.min(2.5, daysSinceLastSolve / practiceInterval);
+  const solveTLast = solveStaleness * (weights.solvingStaleness || 0);
+  
+  // Practice Total with a fundamental bias boost
+  const solveTotal = (accuracyA + solveS + solveTLast) * 1.4;
 
   const scores = {
     new: isFinite(newTotal) ? Math.round(newTotal) : 0,
@@ -166,27 +170,39 @@ export function getCategorizedPriority(
     review: isFinite(reviewTotal) ? Math.round(reviewTotal) : 0
   };
 
-  // 4. SATURATION PENALTY
-  // If we worked on this lecture today, we apply a penalty to allow others a turn.
+  // 4. SATURATION PENALTY & SAME-DAY GUARD
   const lastTouchDays = Math.min(daysSinceLastReview, daysSinceLastSolve);
+  let finalMultiplier = 1.0;
 
-  // If touched very recently (< 0.8 days), apply penalty.
-  let finalMultiplier = lastTouchDays < 0.8 ? 0.4 : 1.0;
+  if (lastTouchDays < 0.9) {
+    finalMultiplier = 0.05; // Strict Same-Day Guard: If touched today, virtually silent.
+  } else if (lastTouchDays < 1.9) {
+    finalMultiplier = 0.75; // Discourage same subject two days in a row if alternatives exist.
+  }
 
   // 5. EXAM PROXIMITY BOOST
   const linkedExams = exams.filter(e => 
     e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+  let isEmergencyRetrieval = false;
+
   if (linkedExams.length > 0) {
     const nextExam = linkedExams[0];
     const examTime = new Date(nextExam.date).getTime();
     const daysUntilExam = (examTime - now) / (1000 * 60 * 60 * 24);
 
-    if (daysUntilExam >= 0 && daysUntilExam <= 14) {
-      // Scale from 1.5x at 14 days to 4.5x at 0 days
-      const proximityBoost = 1.5 + (1 - (daysUntilExam / 14)) * 3.0;
+    if (daysUntilExam >= 0 && daysUntilExam <= 21) {
+      // Non-linear boost: Scale from 1.2x at 21 days to ~8.0x at 0 days
+      // This creates a much sharper curve as the date approaches.
+      const urgencyFactor = 1 - (daysUntilExam / 21);
+      const proximityBoost = 1.2 + (Math.pow(urgencyFactor, 2) * 6.8);
       finalMultiplier *= proximityBoost;
+
+      // EXAM EMERGENCY: If exam is in < 5 days, prioritize retrieval practice (solving) above all else
+      if (daysUntilExam < 5) {
+        isEmergencyRetrieval = true;
+      }
     }
   }
 
@@ -219,23 +235,24 @@ export function getCategorizedPriority(
     };
   } 
   
-  // B. SOLVING vs REVIEW ( Strategic Pipeline Bias )
+  // B. SOLVING vs REVIEW ( Strategic Retrieval Bias )
   const practiceDone = lecture.practiceDone || (lecture.practiceCount || 0) >= 1;
-  const solvingMultiplier = practiceDone ? 1.0 : 1.8; // Even stronger boost to ensure solving happens
+  const solvingMultiplier = (practiceDone ? 1.0 : 2.0) * (isEmergencyRetrieval ? 1.5 : 1.0); 
   
-  if (!practiceDone || (solveTotal * solvingMultiplier) > reviewTotal) {
-    const finalSolvingScore = Math.round(scores.solving * finalMultiplier * (practiceDone ? 1 : 1.8));
+  // Decide best mode based on weighted "Staleness" and "Retrieval Need"
+  if (!practiceDone || (solveTotal * solvingMultiplier) > (reviewTotal * 0.85)) {
+    const finalSolvingScore = Math.round(solveTotal * finalMultiplier * (practiceDone ? (isEmergencyRetrieval ? 1.5 : 1) : 2.0));
     return {
       category: 'solving',
       scores: { ...scores, solving: finalSolvingScore },
       component1: { label: 'Accuracy (A)', score: safeVal(accuracyA) },
       component2: { label: 'Difficulty (S)', score: safeVal(solveS) },
       component3: { label: 'Staleness', score: safeVal(solveTLast) },
-      modifiers: practiceDone ? 0 : 0.8,
+      modifiers: practiceDone ? (isEmergencyRetrieval ? 0.5 : 0) : 1.0,
       total: finalSolvingScore
     };
   } else {
-    const finalReviewScore = Math.round(scores.review * finalMultiplier);
+    const finalReviewScore = Math.round(reviewTotal * finalMultiplier);
     return {
       category: 'review',
       scores: { ...scores, review: finalReviewScore },

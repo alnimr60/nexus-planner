@@ -2809,22 +2809,19 @@ export default function App() {
           const merged = new Map<string, Task>();
           prev.forEach(t => merged.set(t.id, t));
 
-          // Cooldown check: Don't re-suggest if an incomplete version exists, 
-          // OR if a completed version was finished very recently (8h cooldown).
+          // Same-Day Guard: Don't suggest ANY task for a lecture if 
+          // a task for that lecture was already completed today (18h cooldown).
           const finalToAdd = gTasks.filter(gt => {
              const type = gt.type!;
              const lectureId = String(gt.lectureId);
              
-             // Check if we already have an incomplete one of this type
+             // 1. Block if an incomplete version of THIS type exists
              const existingIncomplete = prev.find(pt => !pt.completed && String(pt.lectureId) === lectureId && pt.type === type);
              if (existingIncomplete) return false;
 
-             // Check if we finished one recently (8h lockout to prevent immediate respawn after completion)
-             const existingComplete = prev.find(pt => pt.completed && String(pt.lectureId) === lectureId && pt.type === type);
-             if (existingComplete && existingComplete.completedDate) {
-                const completedTime = new Date(existingComplete.completedDate).getTime();
-                if (Date.now() - completedTime < 8 * 60 * 60 * 1000) return false;
-             }
+             // 2. Strong Same-Day Guard: Block if ANY task for this lecture was completed in the last 18 hours
+             const anyCompletedRecently = prev.find(pt => pt.completed && String(pt.lectureId) === lectureId && pt.completedDate && (Date.now() - new Date(pt.completedDate).getTime() < 18 * 60 * 60 * 1000));
+             if (anyCompletedRecently) return false;
 
              return true;
           });
@@ -2873,12 +2870,15 @@ export default function App() {
                   };
                 }
                 if (t.type === 'new') {
-                  const nextStudyCount = (l.studyCount || 0) + 1;
+                  // After initial study, we set progress=1.0 and studyCount=1
+                  // This kicks off the Practice/Revision loop for tomorrow.
                   return { 
                     ...l, 
-                    studyCount: nextStudyCount, 
+                    studyCount: 1, 
                     lastReviewDate: now,
-                    progress: 1.0
+                    progress: 1.0,
+                    practiceDone: false, // Ensure practice is the next focus
+                    practiceCount: 0
                   };
                 }
               }

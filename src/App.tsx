@@ -29,6 +29,8 @@ import {
   Check,
   AlertCircle,
   Upload,
+  Download,
+  Database,
   Inbox,
   ArrowRight,
   ArrowLeft,
@@ -1807,7 +1809,9 @@ const PriorityEngine = ({
   onOpenTutorial,
   t,
   semesterStartDate,
-  onSemesterStartDateChange
+  onSemesterStartDateChange,
+  onExport,
+  onImport
 }: { 
   weights: PriorityWeights, 
   onWeightChange: (key: keyof PriorityWeights, val: number) => void,
@@ -1829,7 +1833,9 @@ const PriorityEngine = ({
   onOpenTutorial: () => void,
   t: any,
   semesterStartDate: string,
-  onSemesterStartDateChange: (val: string) => void
+  onSemesterStartDateChange: (val: string) => void,
+  onExport: () => void,
+  onImport: (e: React.ChangeEvent<HTMLInputElement>) => void
 }) => {
   const factorGroups = [
     {
@@ -2245,6 +2251,35 @@ const PriorityEngine = ({
               <Trash2 size={16} />
               <span className="text-[10px] font-bold uppercase tracking-widest">{t.reset_data}</span>
             </button>
+          </div>
+        </GlassCard>
+      </section>
+
+      {/* Data Management Section */}
+      <section className="space-y-6 pb-12">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-focus-slate">{t.data_management}</h3>
+        <GlassCard className="p-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button
+              id="export-data-btn"
+              onClick={onExport}
+              className="flex-1 flex items-center justify-center gap-3 glass p-4 rounded-2xl border border-focus-cyan/20 text-focus-cyan hover:bg-focus-cyan hover:text-focus-bg transition-all font-bold uppercase tracking-widest text-[10px]"
+            >
+              <Download size={18} />
+              {t.export_data}
+            </button>
+            <div className="flex-1 relative">
+              <input
+                type="file"
+                accept=".json"
+                onChange={onImport}
+                className="absolute inset-0 opacity-0 cursor-pointer z-10"
+              />
+              <div className="flex items-center justify-center gap-3 glass p-4 rounded-2xl border border-focus-gold/20 text-focus-gold hover:bg-focus-gold hover:text-focus-bg transition-all font-bold uppercase tracking-widest text-[10px]">
+                <Upload size={18} />
+                {t.import_data}
+              </div>
+            </div>
           </div>
         </GlassCard>
       </section>
@@ -3074,6 +3109,69 @@ export default function App() {
     setEditingExam(null);
   };
 
+  const exportData = () => {
+    const data = {
+      subjects,
+      lectures,
+      exams,
+      tasks,
+      weights,
+      allocation,
+      dailyTaskLimit,
+      profiles,
+      language,
+      isAIEnabled,
+      semesterStartDate,
+      currentRound,
+      exportDate: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nexus-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        
+        if (!data.subjects || !data.lectures) {
+          alert(t.import_error);
+          return;
+        }
+
+        setSubjects(data.subjects);
+        setLectures(data.lectures);
+        setExams(data.exams || []);
+        setTasks(data.tasks || []);
+        setWeights(data.weights || weights);
+        setAllocation(data.allocation || allocation);
+        setDailyTaskLimit(data.dailyTaskLimit || dailyTaskLimit);
+        setProfiles(data.profiles || profiles);
+        setLanguage(data.language || language);
+        if (data.isAIEnabled !== undefined) setIsAIEnabled(data.isAIEnabled);
+        if (data.semesterStartDate) setSemesterStartDate(data.semesterStartDate);
+        if (data.currentRound) setCurrentRound(data.currentRound);
+
+        alert(t.import_success);
+        window.location.reload();
+      } catch (err) {
+        alert(t.import_error);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   useEffect(() => {
     const fetchNarrative = async () => {
       if (!isAIEnabled) {
@@ -3520,6 +3618,8 @@ export default function App() {
                 t={t}
                 semesterStartDate={semesterStartDate}
                 onSemesterStartDateChange={setSemesterStartDate}
+                onExport={exportData}
+                onImport={handleImport}
               />
             </motion.div>
           )}

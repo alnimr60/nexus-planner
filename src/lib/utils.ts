@@ -185,24 +185,15 @@ export function getCategorizedPriority(
     e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  let isEmergencyRetrieval = false;
-
   if (linkedExams.length > 0) {
     const nextExam = linkedExams[0];
     const examTime = new Date(nextExam.date).getTime();
     const daysUntilExam = (examTime - now) / (1000 * 60 * 60 * 24);
 
-    if (daysUntilExam >= 0 && daysUntilExam <= 21) {
-      // Non-linear boost: Scale from 1.2x at 21 days to ~8.0x at 0 days
-      // This creates a much sharper curve as the date approaches.
-      const urgencyFactor = 1 - (daysUntilExam / 21);
-      const proximityBoost = 1.2 + (Math.pow(urgencyFactor, 2) * 6.8);
+    if (daysUntilExam >= 0 && daysUntilExam <= 14) {
+      // Scale from 1.5x at 14 days to 4.5x at 0 days
+      const proximityBoost = 1.5 + (1 - (daysUntilExam / 14)) * 3.0;
       finalMultiplier *= proximityBoost;
-
-      // EXAM EMERGENCY: If exam is in < 5 days, prioritize retrieval practice (solving) above all else
-      if (daysUntilExam < 5) {
-        isEmergencyRetrieval = true;
-      }
     }
   }
 
@@ -237,18 +228,18 @@ export function getCategorizedPriority(
   
   // B. SOLVING vs REVIEW ( Strategic Retrieval Bias )
   const practiceDone = lecture.practiceDone || (lecture.practiceCount || 0) >= 1;
-  const solvingMultiplier = (practiceDone ? 1.0 : 2.0) * (isEmergencyRetrieval ? 1.5 : 1.0); 
+  const solvingMultiplier = practiceDone ? 1.0 : 2.0; // Stronger bias for initial practice
   
   // Decide best mode based on weighted "Staleness" and "Retrieval Need"
   if (!practiceDone || (solveTotal * solvingMultiplier) > (reviewTotal * 0.85)) {
-    const finalSolvingScore = Math.round(solveTotal * finalMultiplier * (practiceDone ? (isEmergencyRetrieval ? 1.5 : 1) : 2.0));
+    const finalSolvingScore = Math.round(solveTotal * finalMultiplier * (practiceDone ? 1 : 2.0));
     return {
       category: 'solving',
       scores: { ...scores, solving: finalSolvingScore },
       component1: { label: 'Accuracy (A)', score: safeVal(accuracyA) },
       component2: { label: 'Difficulty (S)', score: safeVal(solveS) },
       component3: { label: 'Staleness', score: safeVal(solveTLast) },
-      modifiers: practiceDone ? (isEmergencyRetrieval ? 0.5 : 0) : 1.0,
+      modifiers: practiceDone ? 0 : 1.0,
       total: finalSolvingScore
     };
   } else {

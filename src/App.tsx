@@ -183,24 +183,36 @@ const Dashboard = ({
     // Helper to pick tasks based on quota and allocation
     const getSelectedForQuota = (pool: any[], quota: number) => {
       if (quota <= 0) return [];
-      const newTasks = pool.filter(p => p.type === 'new');
-      const reviewTasks = pool.filter(p => p.type === 'review');
-      const solvingTasks = pool.filter(p => p.type === 'solving');
-      
-      const newQuota = Math.max(0, Math.round(quota * (allocation.new / 100)));
-      const reviewQuota = Math.max(0, Math.round(quota * (allocation.review / 100)));
-      const solvingQuota = Math.max(0, Math.round(quota * (allocation.solving / 100)));
 
-      const selected = [
+      // 1. Pull "Emergency" tasks first (Exam imminent or extremely stale)
+      const emergencyTasks = pool.filter(p => (p.priorityScore || 0) > 130);
+      const selected = emergencyTasks.slice(0, quota);
+      
+      const remainingQuota = quota - selected.length;
+      if (remainingQuota <= 0) return selected;
+
+      // 2. Fill remaining with balanced allocation
+      const alreadySelectedIds = new Set(selected.map(s => s.id));
+      const remainingPool = pool.filter(p => !alreadySelectedIds.has(p.id));
+
+      const newTasks = remainingPool.filter(p => p.type === 'new');
+      const reviewTasks = remainingPool.filter(p => p.type === 'review');
+      const solvingTasks = remainingPool.filter(p => p.type === 'solving');
+      
+      const newQuota = Math.max(0, Math.round(remainingQuota * (allocation.new / 100)));
+      const reviewQuota = Math.max(0, Math.round(remainingQuota * (allocation.review / 100)));
+      const solvingQuota = Math.max(0, Math.round(remainingQuota * (allocation.solving / 100)));
+
+      selected.push(
         ...newTasks.slice(0, newQuota),
         ...reviewTasks.slice(0, reviewQuota),
         ...solvingTasks.slice(0, solvingQuota)
-      ];
+      );
       
       const extraNeeded = quota - selected.length;
       if (extraNeeded > 0) {
-        const alreadySelectedIds = new Set(selected.map(s => s.id));
-        const leftovers = pool.filter(p => !alreadySelectedIds.has(p.id));
+        const currentSelectedIds = new Set(selected.map(s => s.id));
+        const leftovers = pool.filter(p => !currentSelectedIds.has(p.id));
         selected.push(...leftovers.slice(0, extraNeeded));
       }
       return selected.slice(0, quota);
@@ -2913,8 +2925,16 @@ export default function App() {
              if (existingIncomplete) return false;
 
              // 2. Strong Same-Day Guard: Block if ANY task for this lecture was completed in the last 18 hours
+             // BYPASSED if exam is in < 3 days (Cramming Mode)
+             const isExamCram = exams.some(e => {
+                const examTime = new Date(e.date).getTime();
+                const daysUntil = (examTime - Date.now()) / (1000 * 60 * 60 * 24);
+                const isLinked = e.linkedLectureIds.some(id => String(id) === lectureId);
+                return isLinked && daysUntil < 3 && daysUntil >= -0.5;
+             });
+
              const anyCompletedRecently = prev.find(pt => pt.completed && String(pt.lectureId) === lectureId && pt.completedDate && (Date.now() - new Date(pt.completedDate).getTime() < 18 * 60 * 60 * 1000));
-             if (anyCompletedRecently) return false;
+             if (anyCompletedRecently && !isExamCram) return false;
 
              return true;
           });

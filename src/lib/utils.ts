@@ -191,8 +191,15 @@ export function getCategorizedPriority(
     const daysUntilExam = (examTime - now) / (1000 * 60 * 60 * 24);
 
     if (daysUntilExam >= 0 && daysUntilExam <= 14) {
-      // Scale from 1.5x at 14 days to 4.5x at 0 days
-      const proximityBoost = 1.5 + (1 - (daysUntilExam / 14)) * 3.0;
+      // Scale from 2.0x at 14 days to 10.0x at 0 days (Aggressive Cramming Boost)
+      const proximityBoost = 2.0 + (1 - (daysUntilExam / 14)) * 8.0;
+      
+      // If exam is in less than 3 days, we bypass the saturation/same-day guard
+      // to permit recursive cramming sessions.
+      if (daysUntilExam < 3) {
+        finalMultiplier = Math.max(finalMultiplier, 1.2); 
+      }
+      
       finalMultiplier *= proximityBoost;
     }
   }
@@ -231,15 +238,19 @@ export function getCategorizedPriority(
   const solvingMultiplier = practiceDone ? 1.0 : 2.0; // Stronger bias for initial practice
   
   // Decide best mode based on weighted "Staleness" and "Retrieval Need"
-  if (!practiceDone || (solveTotal * solvingMultiplier) > (reviewTotal * 0.85)) {
-    const finalSolvingScore = Math.round(solveTotal * finalMultiplier * (practiceDone ? 1 : 2.0));
+  // If exam is very close (< 3 days), we significantly bias towards Solving (Active Retrieval)
+  const daysUntilExam = linkedExams.length > 0 ? (new Date(linkedExams[0].date).getTime() - now) / (1000 * 60 * 60 * 24) : 100;
+  const examSolvingBias = (daysUntilExam < 3 && daysUntilExam >= -0.5) ? 1.8 : 1.0;
+
+  if (!practiceDone || (solveTotal * solvingMultiplier * examSolvingBias) > (reviewTotal * 0.85)) {
+    const finalSolvingScore = Math.round(solveTotal * finalMultiplier * (practiceDone ? examSolvingBias : 2.0));
     return {
       category: 'solving',
       scores: { ...scores, solving: finalSolvingScore },
       component1: { label: 'Accuracy (A)', score: safeVal(accuracyA) },
       component2: { label: 'Difficulty (S)', score: safeVal(solveS) },
       component3: { label: 'Staleness', score: safeVal(solveTLast) },
-      modifiers: practiceDone ? 0 : 1.0,
+      modifiers: practiceDone ? (daysUntilExam < 3 ? 0.8 : 0) : 1.0,
       total: finalSolvingScore
     };
   } else {

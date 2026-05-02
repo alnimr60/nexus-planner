@@ -3241,20 +3241,57 @@ export default function App() {
       const newTasks: Task[] = [];
       const newSubjects: Subject[] = [];
       const newExams: Exam[] = [];
+      
+      const tempIdToFinalId = new Map<string, string>();
+      const subjectMap = new Map<string, string>();
+      subjects.forEach(s => subjectMap.set(s.name.toLowerCase().trim(), s.id));
+      
       let firstSubjectIdInBatch = '';
 
+      // First pass: Resolve subjects
+      result.items.forEach((item: any) => {
+        if (item.type === 'subject') {
+          const id = item.id || Math.random().toString(36).substr(2, 9);
+          const nameLower = item.name.toLowerCase().trim();
+          
+          if (subjectMap.has(nameLower)) {
+            const existingId = subjectMap.get(nameLower)!;
+            tempIdToFinalId.set(id, existingId);
+            if (!firstSubjectIdInBatch) firstSubjectIdInBatch = existingId;
+          } else {
+            newSubjects.push({
+              id,
+              name: item.name,
+              color: 'bg-focus-cyan',
+              coverage: 0
+            });
+            subjectMap.set(nameLower, id);
+            tempIdToFinalId.set(id, id);
+            if (!firstSubjectIdInBatch) firstSubjectIdInBatch = id;
+          }
+        }
+      });
+
+      // Second pass: Everything else
       result.items.forEach((item: any) => {
         const id = item.id || Math.random().toString(36).substr(2, 9);
         if (item.type === 'lecture') {
-          let sId = item.subjectId;
+          let sId = item.subjectId ? (tempIdToFinalId.get(item.subjectId) || item.subjectId) : null;
           if (!sId) sId = firstSubjectIdInBatch;
           if (!sId && subjects.length > 0) sId = subjects[0].id;
           
           if (!sId) {
-            const genId = Math.random().toString(36).substr(2, 9);
-            newSubjects.push({ id: genId, name: 'General', color: 'bg-focus-cyan', coverage: 0 });
-            firstSubjectIdInBatch = genId;
-            sId = genId;
+            const genName = 'General';
+            const genNameLower = genName.toLowerCase();
+            if (subjectMap.has(genNameLower)) {
+              sId = subjectMap.get(genNameLower)!;
+            } else {
+              const genId = Math.random().toString(36).substr(2, 9);
+              newSubjects.push({ id: genId, name: genName, color: 'bg-focus-cyan', coverage: 0 });
+              subjectMap.set(genNameLower, genId);
+              firstSubjectIdInBatch = genId;
+              sId = genId;
+            }
           }
 
           newLectures.push({
@@ -3283,14 +3320,6 @@ export default function App() {
             completed: false,
             lectureId: item.lectureId
           });
-        } else if (item.type === 'subject') {
-          newSubjects.push({
-            id,
-            name: item.name,
-            color: 'bg-focus-cyan',
-            coverage: 0
-          });
-          if (!firstSubjectIdInBatch) firstSubjectIdInBatch = id;
         } else if (item.type === 'exam') {
           newExams.push({
             id,
@@ -3426,23 +3455,56 @@ export default function App() {
         const newSubjects: Subject[] = [];
         const newExams: Exam[] = [];
 
-        // Track subjects in this batch
+        const tempIdToFinalId = new Map<string, string>();
+        const subjectMap = new Map<string, string>();
+        subjects.forEach(s => subjectMap.set(s.name.toLowerCase().trim(), s.id));
+        
         let firstSubjectIdInBatch = '';
 
+        // First pass: Resolve subjects
+        result.items.forEach((item: any) => {
+          if (item.type === 'subject') {
+            const id = item.id || Math.random().toString(36).substr(2, 9);
+            const nameLower = item.name.toLowerCase().trim();
+            
+            if (subjectMap.has(nameLower)) {
+              const existingId = subjectMap.get(nameLower)!;
+              tempIdToFinalId.set(id, existingId);
+              if (!firstSubjectIdInBatch) firstSubjectIdInBatch = existingId;
+            } else {
+              newSubjects.push({
+                id,
+                name: item.name,
+                color: 'bg-focus-cyan',
+                coverage: 0
+              });
+              subjectMap.set(nameLower, id);
+              tempIdToFinalId.set(id, id);
+              if (!firstSubjectIdInBatch) firstSubjectIdInBatch = id;
+            }
+          }
+        });
+
+        // Second pass: Everything else
         result.items.forEach((item: any) => {
           const id = item.id || Math.random().toString(36).substr(2, 9);
           if (item.type === 'lecture') {
-            // Priority: item.subjectId > firstSubjectIdInBatch > existing subjects > fallback creator
-            let sId = item.subjectId;
+            let sId = item.subjectId ? (tempIdToFinalId.get(item.subjectId) || item.subjectId) : null;
             if (!sId) sId = firstSubjectIdInBatch;
             if (!sId && subjects.length > 0) sId = subjects[0].id;
             
-            // If still no subject, create a default "General" one
             if (!sId) {
-              const genId = Math.random().toString(36).substr(2, 9);
-              newSubjects.push({ id: genId, name: 'General', color: 'bg-focus-cyan', coverage: 0 });
-              firstSubjectIdInBatch = genId;
-              sId = genId;
+              const genName = 'General';
+              const genNameLower = genName.toLowerCase();
+              if (subjectMap.has(genNameLower)) {
+                sId = subjectMap.get(genNameLower)!;
+              } else {
+                const genId = Math.random().toString(36).substr(2, 9);
+                newSubjects.push({ id: genId, name: genName, color: 'bg-focus-cyan', coverage: 0 });
+                subjectMap.set(genNameLower, genId);
+                firstSubjectIdInBatch = genId;
+                sId = genId;
+              }
             }
 
             newLectures.push({
@@ -3471,14 +3533,6 @@ export default function App() {
               completed: false,
               lectureId: item.lectureId
             });
-          } else if (item.type === 'subject') {
-            newSubjects.push({
-              id,
-              name: item.name,
-              color: 'bg-focus-cyan',
-              coverage: 0
-            });
-            if (!firstSubjectIdInBatch) firstSubjectIdInBatch = id;
           } else if (item.type === 'exam') {
             newExams.push({
               id,

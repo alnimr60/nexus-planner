@@ -36,7 +36,8 @@ import {
   ArrowLeft,
   CheckSquare,
   Square,
-  ListFilter
+  ListFilter,
+  ChevronDown
 } from 'lucide-react';
 import { cn, Subject, Lecture, Exam, Task, calculatePriorityScore, getLecturePriorityScore, getCategorizedPriority, PriorityWeights, TaskType, DailyAllocation, calculateFocusScore } from './lib/utils';
 import { MOCK_SUBJECTS, MOCK_LECTURES, MOCK_EXAMS, MOCK_TASKS } from './constants';
@@ -1572,6 +1573,7 @@ const ExamHub = ({
 const ExamForm = ({ 
   exam, 
   lectures, 
+  subjects,
   onSave, 
   onDelete,
   t,
@@ -1579,12 +1581,14 @@ const ExamForm = ({
 }: { 
   exam: Exam, 
   lectures: Lecture[],
+  subjects: Subject[],
   onSave: (updated: Exam) => void, 
   onDelete: (id: string) => void,
   t: any,
   language: Language
 }) => {
   const [formData, setFormData] = useState<Exam>(exam);
+  const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
 
   const toggleLecture = (lectureId: string) => {
     setFormData(prev => {
@@ -1594,6 +1598,16 @@ const ExamForm = ({
       return { ...prev, linkedLectureIds: linked };
     });
   };
+
+  const lecturesBySubject = subjects.map(subject => {
+    const subjectLectures = lectures.filter(l => l.subjectId === subject.id);
+    const selectedCount = subjectLectures.filter(l => formData.linkedLectureIds.includes(l.id)).length;
+    return {
+      subject,
+      lectures: subjectLectures,
+      selectedCount
+    };
+  }).filter(group => group.lectures.length > 0);
 
   return (
     <form onSubmit={(e) => {
@@ -1655,22 +1669,66 @@ const ExamForm = ({
 
         <div>
           <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-4">{t.link_lectures}</label>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-            {lectures.map(lecture => (
-              <button
-                key={lecture.id}
-                type="button"
-                onClick={() => toggleLecture(lecture.id)}
-                className={cn(
-                  "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
-                  formData.linkedLectureIds.includes(lecture.id)
-                    ? "bg-focus-cyan/10 border-focus-cyan text-focus-cyan"
-                    : "bg-white/5 border-white/5 text-focus-slate hover:bg-white/10"
-                )}
-              >
-                <span className="text-xs font-medium truncate">{lecture.title}</span>
-                {formData.linkedLectureIds.includes(lecture.id) && <CheckCircle2 size={14} />}
-              </button>
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
+            {lecturesBySubject.map(group => (
+              <div key={group.subject.id} className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setExpandedSubjectId(expandedSubjectId === group.subject.id ? null : group.subject.id)}
+                  className={cn(
+                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all",
+                    expandedSubjectId === group.subject.id
+                      ? "bg-white/10 border-focus-cyan/50 shadow-lg"
+                      : "bg-white/5 border-white/5 hover:bg-white/10"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-2 h-2 rounded-full", group.subject.color)} />
+                    <span className="text-xs font-bold tracking-tight text-white">{group.subject.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {group.selectedCount > 0 && (
+                      <span className="text-[10px] font-bold bg-focus-cyan/20 text-focus-cyan px-2 py-0.5 rounded-full">
+                        {group.selectedCount} {language === 'ar' ? 'مختار' : 'selected'}
+                      </span>
+                    )}
+                    <motion.div
+                      animate={{ rotate: expandedSubjectId === group.subject.id ? 180 : 0 }}
+                      className="text-focus-slate"
+                    >
+                      <ChevronDown size={14} />
+                    </motion.div>
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {expandedSubjectId === group.subject.id && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden space-y-2 pl-4"
+                    >
+                      {group.lectures.map(lecture => (
+                        <button
+                          key={lecture.id}
+                          type="button"
+                          onClick={() => toggleLecture(lecture.id)}
+                          className={cn(
+                            "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
+                            formData.linkedLectureIds.includes(lecture.id)
+                              ? "bg-focus-cyan/10 border-focus-cyan text-focus-cyan"
+                              : "bg-white/5 border-white/10 text-focus-slate hover:bg-white/10"
+                          )}
+                        >
+                          <span className="text-xs font-medium truncate">{lecture.title}</span>
+                          {formData.linkedLectureIds.includes(lecture.id) && <CheckCircle2 size={14} />}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             ))}
           </div>
         </div>
@@ -3936,6 +3994,7 @@ export default function App() {
           <ExamForm 
             exam={editingExam} 
             lectures={lectures} 
+            subjects={subjects}
             onSave={updateExam} 
             onDelete={(id) => deleteExam(id)} 
             t={t}

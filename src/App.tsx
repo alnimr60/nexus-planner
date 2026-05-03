@@ -37,7 +37,8 @@ import {
   CheckSquare,
   Square,
   ListFilter,
-  ChevronDown
+  ChevronDown,
+  ChevronLeft
 } from 'lucide-react';
 import { cn, Subject, Lecture, Exam, Task, calculatePriorityScore, getLecturePriorityScore, getCategorizedPriority, PriorityWeights, TaskType, DailyAllocation, calculateFocusScore } from './lib/utils';
 import { MOCK_SUBJECTS, MOCK_LECTURES, MOCK_EXAMS, MOCK_TASKS } from './constants';
@@ -1034,25 +1035,61 @@ const LectureIntelligenceForm = ({
 };
 
 const WeeklyLogScreen = ({ tasks, lectures, t }: { tasks: Task[], lectures: Lecture[], t: any }) => {
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
-  startOfWeek.setHours(0, 0, 0, 0);
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  const getStartOfWeek = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay() + (offset * 7));
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const startOfSelectedWeek = getStartOfWeek(weekOffset);
+  const endOfSelectedWeek = new Date(startOfSelectedWeek);
+  endOfSelectedWeek.setDate(endOfSelectedWeek.getDate() + 7);
 
   const weeklyTasks = tasks
-    .filter(t => t.completed && t.completedDate && new Date(t.completedDate) >= startOfWeek)
+    .filter(task => {
+      if (!task.completed || !task.completedDate) return false;
+      const compDate = new Date(task.completedDate);
+      return compDate >= startOfSelectedWeek && compDate < endOfSelectedWeek;
+    })
     .sort((a, b) => new Date(b.completedDate!).getTime() - new Date(a.completedDate!).getTime());
+
+  const weekLabel = weekOffset === 0 
+    ? t.this_week 
+    : `${startOfSelectedWeek.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${new Date(endOfSelectedWeek.getTime() - 86400000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom duration-500 pb-24">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-white">{t.weekly_log}</h1>
           <p className="text-focus-slate text-sm">{t.weekly_log_desc}</p>
         </div>
-        <div className="glass px-4 py-2 rounded-xl flex items-center gap-2 border border-white/5">
-          <Calendar size={16} className="text-focus-cyan" />
-          <span className="text-xs font-bold text-white">{t.this_week}</span>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setWeekOffset(prev => prev - 1)}
+            className="w-10 h-10 rounded-xl glass border border-white/5 flex items-center justify-center text-focus-slate hover:text-focus-cyan hover:border-focus-cyan/30 transition-all"
+            title={t.previous_week}
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <div className="glass px-4 py-2 rounded-xl flex items-center gap-2 border border-white/5 min-w-[140px] justify-center">
+            <Calendar size={16} className="text-focus-cyan" />
+            <span className="text-xs font-bold text-white whitespace-nowrap">{weekLabel}</span>
+          </div>
+          <button 
+            onClick={() => setWeekOffset(prev => prev + 1)}
+            disabled={weekOffset >= 0}
+            className={cn(
+              "w-10 h-10 rounded-xl glass border border-white/5 flex items-center justify-center transition-all",
+              weekOffset >= 0 ? "opacity-30 cursor-not-allowed" : "text-focus-slate hover:text-focus-cyan hover:border-focus-cyan/30"
+            )}
+            title={t.next_week}
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
       </div>
 

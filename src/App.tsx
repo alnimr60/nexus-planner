@@ -104,6 +104,7 @@ const Dashboard = ({
   onViewAllTasks,
   onViewFocusIntelligence,
   onOpenBulkImport,
+  onOpenWeeklyLog,
   focusScore,
   dailyTaskLimit,
   currentRound,
@@ -123,6 +124,7 @@ const Dashboard = ({
   onViewAllTasks: () => void,
   onViewFocusIntelligence: () => void,
   onOpenBulkImport: () => void,
+  onOpenWeeklyLog: () => void,
   focusScore: number,
   dailyTaskLimit: number,
   currentRound: number,
@@ -260,17 +262,26 @@ const Dashboard = ({
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">{language === 'ar' ? 'صباح الخير، أليكس.' : 'Good Morning, Alex.'}</h1>
         </div>
-        <button 
-          id="focus-score-btn"
-          onClick={onViewFocusIntelligence}
-          className="flex items-center gap-3 glass px-4 py-2 rounded-full border-focus-border hover:bg-white/5 transition-colors"
-        >
-          <div className={cn(
-            "w-3 h-3 rounded-full transition-all duration-500",
-            focusScore > 80 ? "bg-focus-cyan glow-cyan" : focusScore > 50 ? "bg-focus-gold glow-gold" : "bg-red-400"
-          )} />
-          <span className="text-sm font-semibold">{t.focus_score}: {focusScore}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={onOpenWeeklyLog}
+            className="w-10 h-10 rounded-full glass border border-white/10 flex items-center justify-center text-focus-slate hover:text-focus-cyan hover:border-focus-cyan/30 transition-all"
+            title={t.weekly_log}
+          >
+            <History size={18} />
+          </button>
+          <button 
+            id="focus-score-btn"
+            onClick={onViewFocusIntelligence}
+            className="flex items-center gap-3 glass px-4 py-2 rounded-full border-focus-border hover:bg-white/5 transition-colors"
+          >
+            <div className={cn(
+              "w-3 h-3 rounded-full transition-all duration-500",
+              focusScore > 80 ? "bg-focus-cyan glow-cyan" : focusScore > 50 ? "bg-focus-gold glow-gold" : "bg-red-400"
+            )} />
+            <span className="text-sm font-semibold">{t.focus_score}: {focusScore}</span>
+          </button>
+        </div>
       </header>
 
       {/* Temporal Navigation */}
@@ -1019,6 +1030,68 @@ const LectureIntelligenceForm = ({
         </button>
       </div>
     </form>
+  );
+};
+
+const WeeklyLogScreen = ({ tasks, lectures, t }: { tasks: Task[], lectures: Lecture[], t: any }) => {
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const weeklyTasks = tasks
+    .filter(t => t.completed && t.completedDate && new Date(t.completedDate) >= startOfWeek)
+    .sort((a, b) => new Date(b.completedDate!).getTime() - new Date(a.completedDate!).getTime());
+
+  return (
+    <div className="space-y-8 animate-in slide-in-from-bottom duration-500 pb-24">
+      <div className="flex justify-between items-end">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-white">{t.weekly_log}</h1>
+          <p className="text-focus-slate text-sm">{t.weekly_log_desc}</p>
+        </div>
+        <div className="glass px-4 py-2 rounded-xl flex items-center gap-2 border border-white/5">
+          <Calendar size={16} className="text-focus-cyan" />
+          <span className="text-xs font-bold text-white">{t.this_week}</span>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {weeklyTasks.length > 0 ? (
+          weeklyTasks.map(task => {
+            const lecture = lectures.find(l => String(l.id) === String(task.lectureId));
+            return (
+              <GlassCard key={task.id} className="p-4 border border-white/5 hover:border-focus-cyan/20 transition-all">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-focus-cyan/10 flex items-center justify-center text-focus-cyan shrink-0">
+                      <CheckCircle2 size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-white truncate">{lecture?.title || 'Unknown Lecture'}</h3>
+                      <p className="text-[10px] text-focus-slate uppercase tracking-wider">{task.type}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-medium text-focus-cyan">
+                      {new Date(task.completedDate!).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </div>
+                    <p className="text-[10px] text-focus-slate uppercase tracking-wider mt-1">{t.completed_on}</p>
+                  </div>
+                </div>
+              </GlassCard>
+            );
+          })
+        ) : (
+          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-focus-slate">
+              <History size={32} />
+            </div>
+            <p className="text-focus-slate text-sm">{t.no_tasks_week}</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -1881,7 +1954,8 @@ const PriorityEngine = ({
   semesterStartDate,
   onSemesterStartDateChange,
   onExport,
-  onImport
+  onImport,
+  onOpenWeeklyLog
 }: { 
   weights: PriorityWeights, 
   onWeightChange: (key: keyof PriorityWeights, val: number) => void,
@@ -1905,7 +1979,8 @@ const PriorityEngine = ({
   semesterStartDate: string,
   onSemesterStartDateChange: (val: string) => void,
   onExport: () => void,
-  onImport: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onImport: (e: React.ChangeEvent<HTMLInputElement>) => void,
+  onOpenWeeklyLog: () => void
 }) => {
   const factorGroups = [
     {
@@ -1957,12 +2032,21 @@ const PriorityEngine = ({
           <h1 className="text-2xl font-bold tracking-tight text-white">{t.architecture_title}</h1>
           <p className="text-focus-slate text-sm">{t.architecture_desc}</p>
         </div>
-        <button 
-          onClick={onOpenTutorial}
-          className="w-10 h-10 rounded-xl glass border border-white/10 flex items-center justify-center text-focus-cyan hover:bg-focus-cyan/10 transition-all"
-        >
-          <BookOpen size={20} />
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={onOpenWeeklyLog}
+            className="w-10 h-10 rounded-xl glass border border-white/10 flex items-center justify-center text-focus-slate hover:text-focus-cyan hover:bg-focus-cyan/10 transition-all"
+            title={t.weekly_log}
+          >
+            <History size={18} />
+          </button>
+          <button 
+            onClick={onOpenTutorial}
+            className="w-10 h-10 rounded-xl glass border border-white/10 flex items-center justify-center text-focus-cyan hover:bg-focus-cyan/10 transition-all"
+          >
+            <BookOpen size={20} />
+          </button>
+        </div>
       </header>
 
       {/* Daily Volume Allocation */}
@@ -3666,6 +3750,7 @@ export default function App() {
                 onViewAllTasks={() => setIsTasksModalOpen(true)}
                 onViewFocusIntelligence={() => setIsFocusModalOpen(true)}
                 onOpenBulkImport={() => setIsBulkImportOpen(true)}
+                onOpenWeeklyLog={() => setActiveTab('weekly_log')}
                 focusScore={focusScore}
                 dailyTaskLimit={dailyTaskLimit}
                 currentRound={currentRound}
@@ -3706,6 +3791,11 @@ export default function App() {
                 t={t}
                 language={language}
               />
+            </motion.div>
+          )}
+          {activeTab === 'weekly_log' && (
+            <motion.div key="weekly" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <WeeklyLogScreen tasks={tasks} lectures={lectures} t={t} />
             </motion.div>
           )}
           {activeTab === 'roadmap' && (
@@ -3752,6 +3842,7 @@ export default function App() {
                 onSemesterStartDateChange={setSemesterStartDate}
                 onExport={exportData}
                 onImport={handleImport}
+                onOpenWeeklyLog={() => setActiveTab('weekly_log')}
               />
             </motion.div>
           )}

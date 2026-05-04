@@ -187,30 +187,33 @@ const Dashboard = ({
     const getSelectedForQuota = (pool: any[], quota: number) => {
       if (quota <= 0) return [];
 
-      // 1. Pull "Emergency" tasks first (Exam imminent or extremely stale)
-      const emergencyTasks = pool.filter(p => (p.priorityScore || 0) > 130);
-      const selected = emergencyTasks.slice(0, quota);
+      const newTasks = pool.filter(p => p.type === 'new');
+      const reviewTasks = pool.filter(p => p.type === 'review');
+      const solvingTasks = pool.filter(p => p.type === 'solving');
       
-      const remainingQuota = quota - selected.length;
-      if (remainingQuota <= 0) return selected;
+      let newQuota = Math.max(0, Math.round(quota * (allocation.new / 100)));
+      let reviewQuota = Math.max(0, Math.round(quota * (allocation.review / 100)));
+      let solvingQuota = Math.max(0, Math.round(quota * (allocation.solving / 100)));
 
-      // 2. Fill remaining with balanced allocation
-      const alreadySelectedIds = new Set(selected.map(s => s.id));
-      const remainingPool = pool.filter(p => !alreadySelectedIds.has(p.id));
+      // Handle rounding errors so they add up to exactly 'quota'
+      let totalAllocated = newQuota + reviewQuota + solvingQuota;
+      if (totalAllocated !== quota) {
+        let diff = quota - totalAllocated;
+        // give diff to the highest allocation category
+        if (allocation.new >= allocation.review && allocation.new >= allocation.solving) {
+          newQuota += diff;
+        } else if (allocation.review >= allocation.solving) {
+          reviewQuota += diff;
+        } else {
+          solvingQuota += diff;
+        }
+      }
 
-      const newTasks = remainingPool.filter(p => p.type === 'new');
-      const reviewTasks = remainingPool.filter(p => p.type === 'review');
-      const solvingTasks = remainingPool.filter(p => p.type === 'solving');
-      
-      const newQuota = Math.max(0, Math.round(remainingQuota * (allocation.new / 100)));
-      const reviewQuota = Math.max(0, Math.round(remainingQuota * (allocation.review / 100)));
-      const solvingQuota = Math.max(0, Math.round(remainingQuota * (allocation.solving / 100)));
-
-      selected.push(
+      const selected = [
         ...newTasks.slice(0, newQuota),
         ...reviewTasks.slice(0, reviewQuota),
         ...solvingTasks.slice(0, solvingQuota)
-      );
+      ];
       
       const extraNeeded = quota - selected.length;
       if (extraNeeded > 0) {

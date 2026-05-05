@@ -2788,14 +2788,28 @@ export default function App() {
   const [lectures, setLectures] = useState<Lecture[]>(() => {
     const saved = localStorage.getItem('focus_lectures');
     const data = saved ? JSON.parse(saved) : MOCK_LECTURES;
-    return Array.isArray(data) ? data.map(l => ({
-      ...l,
-      progress: isFinite(l.progress) ? l.progress : 0,
-      studyCount: isFinite(l.studyCount) ? l.studyCount : 0,
-      practiceCount: isFinite(l.practiceCount) ? l.practiceCount : 0,
-      difficulty: isFinite(l.difficulty) ? l.difficulty : 0.5,
-      pageCount: isFinite(l.pageCount) ? l.pageCount : 0,
-    })) : [];
+    return Array.isArray(data) ? data.map(l => {
+      // Data Migration & Cleanup
+      const studyCount = isFinite(l.studyCount) ? Number(l.studyCount) : 0;
+      const practiceCount = isFinite(l.practiceCount) ? Number(l.practiceCount) : 0;
+      
+      const cleaned = {
+        ...l,
+        date: l.date ? l.date.split('T')[0] : new Date().toISOString().split('T')[0],
+        progress: isFinite(l.progress) ? l.progress : 0,
+        studyCount,
+        practiceCount,
+        difficulty: isFinite(l.difficulty) ? l.difficulty : 0.5,
+        pageCount: isFinite(l.pageCount) ? l.pageCount : 0,
+      };
+
+      // If it has never been studied/practiced, it shouldn't have a "Last Touch" date 
+      // which would incorrectly lower its priority score
+      if (studyCount === 0) delete (cleaned as any).lastReviewDate;
+      if (practiceCount === 0) delete (cleaned as any).lastPracticeDate;
+
+      return cleaned;
+    }) : [];
   });
   const [exams, setExams] = useState<Exam[]>(() => {
     const saved = localStorage.getItem('focus_exams');
@@ -3504,13 +3518,12 @@ export default function App() {
             id,
             subjectId: sId,
             title: item.title,
-            date: item.date || new Date().toISOString(),
+            date: item.date || new Date().toISOString().split('T')[0],
             pageCount: item.pageCount || 10,
             progress: 0,
             difficulty: 0.5,
             studyCount: 0,
             practiceCount: 0,
-            lastReviewDate: new Date().toISOString(),
             abandonedSessionsCount: 0,
             practiceDone: false,
             examAttempts: 0,
@@ -3521,7 +3534,7 @@ export default function App() {
           newTasks.push({
             id,
             title: item.title,
-            dueDate: item.dueDate || new Date().toISOString(),
+            dueDate: item.dueDate || new Date().toISOString().split('T')[0],
             priority: 'medium',
             completed: false,
             lectureId: item.lectureId
@@ -3530,7 +3543,7 @@ export default function App() {
           newExams.push({
             id,
             name: item.name,
-            date: item.date || new Date().toISOString(),
+            date: item.date || new Date().toISOString().split('T')[0],
             confidence: 50,
             linkedLectureIds: []
           });
@@ -3546,7 +3559,7 @@ export default function App() {
       const newTask: Task = {
         id: Math.random().toString(36).substr(2, 9),
         title: result.title || pulseInput,
-        dueDate: result.dueDate || new Date().toISOString(),
+        dueDate: result.dueDate || new Date().toISOString().split('T')[0],
         priority: 'medium',
         completed: false,
         lectureId: result.lectureId
@@ -3585,7 +3598,7 @@ export default function App() {
       const newExam: Exam = {
         id: Math.random().toString(36).substr(2, 9),
         name: result.name || pulseInput,
-        date: result.date || new Date().toISOString(),
+        date: result.date || new Date().toISOString().split('T')[0],
         confidence: 50,
         linkedLectureIds: []
       };
@@ -3732,7 +3745,7 @@ export default function App() {
             newTasks.push({
               id,
               title: item.title,
-              dueDate: item.dueDate || new Date().toISOString(),
+              dueDate: item.dueDate || new Date().toISOString().split('T')[0],
               priority: 'medium',
               completed: false,
               lectureId: item.lectureId
@@ -3741,7 +3754,7 @@ export default function App() {
             newExams.push({
               id,
               name: item.name,
-              date: item.date || new Date().toISOString(),
+              date: item.date || new Date().toISOString().split('T')[0],
               confidence: 50,
               linkedLectureIds: []
             });

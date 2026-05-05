@@ -179,10 +179,19 @@ export function getCategorizedPriority(
     contextMult = 0.9; 
   }
 
-  // Exam Proximity
-  const linkedExams = exams.filter(e => 
-    e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id)
-  ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // Exam Proximity (Active if Today or in the Future)
+  const linkedExams = exams.filter(e => {
+    const isLinked = e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id);
+    if (!isLinked) return false;
+    
+    // Normalize both to start of day for comparison
+    const examDate = new Date(e.date);
+    examDate.setUTCHours(0, 0, 0, 0);
+    const today = new Date(now);
+    today.setUTCHours(0, 0, 0, 0);
+    
+    return examDate.getTime() >= today.getTime();
+  }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   
   const daysUntilExam = linkedExams.length > 0 ? (new Date(linkedExams[0].date).getTime() - now) / (1000 * 60 * 60 * 24) : 100;
   if (daysUntilExam >= 0 && daysUntilExam <= 14) {

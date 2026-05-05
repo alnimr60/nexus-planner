@@ -1527,6 +1527,189 @@ const ExamHub = ({
   t: any,
   language: Language
 }) => {
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const now = Date.now();
+
+  const upcomingExams = exams.filter(e => {
+    const examDate = new Date(e.date);
+    examDate.setHours(0, 0, 0, 0);
+    return examDate.getTime() >= today.getTime();
+  }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const completedExams = exams.filter(e => {
+    const examDate = new Date(e.date);
+    examDate.setHours(0, 0, 0, 0);
+    return examDate.getTime() < today.getTime();
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const renderExam = (exam: Exam, isCompleted = false) => {
+    const linkedLectures = lectures.filter(l => exam.linkedLectureIds.includes(l.id));
+    const totalProgress = linkedLectures.reduce((acc, l) => acc + (isFinite(l.progress) ? l.progress : 0), 0);
+    const readiness = linkedLectures.length > 0 
+      ? Math.round((totalProgress / linkedLectures.length) * 100)
+      : 0;
+    
+    const studyFocus = [...linkedLectures].sort((a, b) => a.progress - b.progress)[0];
+    const examTime = new Date(exam.date).getTime();
+    const daysRemaining = isNaN(examTime) ? 0 : Math.ceil((examTime - now) / (1000 * 60 * 60 * 24));
+
+    return (
+      <div key={exam.id} className={cn("space-y-6", isCompleted && "opacity-60")}>
+        <GlassCard className={cn("relative overflow-hidden p-8 border-focus-border shadow-xl", isCompleted && "py-6")}>
+          <div className="absolute inset-0 bg-gradient-to-b from-focus-cyan/5 to-transparent pointer-events-none" />
+          
+          <div className="flex justify-between items-start relative z-10">
+            <div className="text-left space-y-1">
+              <h2 className={cn("text-2xl font-bold", isCompleted && "text-lg")}>{exam.name}</h2>
+              {!isCompleted && (
+                <p className={cn(
+                  "text-sm font-medium",
+                  daysRemaining < 3 ? "text-red-400" : daysRemaining < 7 ? "text-focus-gold" : "text-focus-cyan"
+                )}>
+                  {daysRemaining <= 0 ? (language === 'ar' ? 'يوم الامتحان' : "Exam Day") : `${daysRemaining} ${t.days_left}`}
+                </p>
+              )}
+              {isCompleted && (
+                <p className="text-xs text-focus-slate">
+                  {language === 'ar' ? 'اكتمل في' : 'Completed on'} {new Date(exam.date).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US')}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => onEditExam(exam)}
+                className="p-2 rounded-lg bg-white/5 text-focus-slate hover:text-white transition-colors"
+              >
+                <Edit2 size={16} />
+              </button>
+            </div>
+          </div>
+          
+          {!isCompleted && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mt-8">
+                <div className="relative w-32 h-32 mx-auto">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
+                    <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="8" fill="transparent" 
+                      strokeDasharray={364} strokeDashoffset={364 - (364 * exam.confidence) / 100}
+                      className="text-focus-cyan transition-all duration-1000 ease-out" />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-2xl font-bold">{exam.confidence}%</span>
+                    <span className="text-[8px] uppercase tracking-widest text-focus-slate">{t.confidence}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col justify-center space-y-4">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-focus-slate">
+                      <span>Readiness</span>
+                      <span className="text-focus-cyan">{readiness}%</span>
+                    </div>
+                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-focus-cyan rounded-full transition-all duration-1000" 
+                        style={{ width: `${readiness}%` }} 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                    <p className="text-[8px] uppercase tracking-widest text-focus-slate mb-1">Study Focus</p>
+                    {studyFocus ? (
+                      <p className="text-xs font-medium truncate">{studyFocus.title}</p>
+                    ) : (
+                      <p className="text-xs text-focus-slate italic">{t.no_lectures_linked}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-white/5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-focus-slate mb-3 text-left">{t.update_confidence}</label>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={exam.confidence} 
+                  onChange={(e) => onUpdateExam({ ...exam, confidence: parseInt(e.target.value) })}
+                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-focus-cyan" 
+                />
+              </div>
+            </>
+          )}
+
+          {isCompleted && (
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden mr-4">
+                <div 
+                  className="h-full bg-focus-cyan opacity-40" 
+                  style={{ width: `${readiness}%` }} 
+                />
+              </div>
+              <span className="text-[10px] font-mono text-focus-slate">{readiness}% {t.readiness}</span>
+            </div>
+          )}
+        </GlassCard>
+
+        {!isCompleted && (
+          <section className="space-y-4 text-left">
+            <div className="flex justify-between items-center px-1">
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-focus-slate">{t.required_knowledge}</h3>
+              <span className="text-[10px] font-mono text-focus-slate">{linkedLectures.length} {t.lectures_plural}</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {linkedLectures.length > 0 ? (
+                linkedLectures.map(lecture => (
+                  <GlassCard 
+                    key={lecture.id} 
+                    onClick={() => onEditLecture(lecture)}
+                    className="p-4 flex items-center justify-between group hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-focus-cyan/10 transition-colors">
+                        <BookOpen size={16} className="text-focus-cyan" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-medium">{lecture.title}</p>
+                        <p className="text-[10px] text-focus-slate font-mono">{Math.round((isFinite(lecture.progress) ? lecture.progress : 0) * 100)}% {t.mastered}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1">
+                        <History size={8} className="text-focus-cyan" />
+                        <span className="text-[8px] font-mono text-focus-cyan">{lecture.studyCount || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Target size={8} className="text-focus-gold" />
+                        <span className="text-[8px] font-mono text-focus-gold">{lecture.practiceCount || 0}</span>
+                      </div>
+                    </div>
+                  </GlassCard>
+                ))
+              ) : (
+                <div className="p-8 text-center glass rounded-2xl border-dashed border-white/10 col-span-full">
+                  <AlertCircle size={24} className="mx-auto text-focus-slate mb-2" />
+                  <p className="text-xs text-focus-slate">{t.no_exam_lectures}</p>
+                  <button 
+                    onClick={() => onEditExam(exam)}
+                    className="mt-3 text-[10px] font-bold uppercase tracking-widest text-focus-cyan hover:underline"
+                  >
+                    {t.link_lectures}
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div id="exam-hub-screen" className="space-y-8 animate-in slide-in-from-bottom duration-500 pb-20">
       <header className="flex justify-between items-center">
@@ -1544,145 +1727,42 @@ const ExamHub = ({
       </header>
 
       {exams.length > 0 ? (
-        exams.map(exam => {
-          const linkedLectures = lectures.filter(l => exam.linkedLectureIds.includes(l.id));
-          const totalProgress = linkedLectures.reduce((acc, l) => acc + (isFinite(l.progress) ? l.progress : 0), 0);
-          const readiness = linkedLectures.length > 0 
-            ? Math.round((totalProgress / linkedLectures.length) * 100)
-            : 0;
-          
-          const studyFocus = [...linkedLectures].sort((a, b) => a.progress - b.progress)[0];
-          const examTime = new Date(exam.date).getTime();
-          const daysRemaining = isNaN(examTime) ? 0 : Math.ceil((examTime - Date.now()) / (1000 * 60 * 60 * 24));
-
-          return (
-            <div key={exam.id} className="space-y-6">
-              <GlassCard className="relative overflow-hidden p-8 border-focus-border shadow-xl">
-                <div className="absolute inset-0 bg-gradient-to-b from-focus-cyan/5 to-transparent pointer-events-none" />
-                
-                <div className="flex justify-between items-start relative z-10">
-                  <div className="text-left space-y-1">
-                    <h2 className="text-2xl font-bold">{exam.name}</h2>
-                    <p className={cn(
-                      "text-sm font-medium",
-                      daysRemaining < 3 ? "text-red-400" : daysRemaining < 7 ? "text-focus-gold" : "text-focus-cyan"
-                    )}>
-                      {daysRemaining <= 0 ? (language === 'ar' ? 'يوم الامتحان' : "Exam Day") : `${daysRemaining} ${t.days_left}`}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => onEditExam(exam)}
-                      className="p-2 rounded-lg bg-white/5 text-focus-slate hover:text-white transition-colors"
-                    >
-                      <Edit2 size={16} />
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mt-8">
-                  <div className="relative w-32 h-32 mx-auto">
-                    <svg className="w-full h-full transform -rotate-90">
-                      <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
-                      <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="8" fill="transparent" 
-                        strokeDasharray={364} strokeDashoffset={364 - (364 * exam.confidence) / 100}
-                        className="text-focus-cyan transition-all duration-1000 ease-out" />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-bold">{exam.confidence}%</span>
-                      <span className="text-[8px] uppercase tracking-widest text-focus-slate">{t.confidence}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col justify-center space-y-4">
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-focus-slate">
-                        <span>Readiness</span>
-                        <span className="text-focus-cyan">{readiness}%</span>
-                      </div>
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-focus-cyan rounded-full transition-all duration-1000" 
-                          style={{ width: `${readiness}%` }} 
-                        />
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                      <p className="text-[8px] uppercase tracking-widest text-focus-slate mb-1">Study Focus</p>
-                      {studyFocus ? (
-                        <p className="text-xs font-medium truncate">{studyFocus.title}</p>
-                      ) : (
-                        <p className="text-xs text-focus-slate italic">{t.no_lectures_linked}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-white/5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-focus-slate mb-3 text-left">{t.update_confidence}</label>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="100" 
-                    value={exam.confidence} 
-                    onChange={(e) => onUpdateExam({ ...exam, confidence: parseInt(e.target.value) })}
-                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-focus-cyan" 
-                  />
-                </div>
-              </GlassCard>
-
-              <section className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-focus-slate">{t.required_knowledge}</h3>
-                  <span className="text-[10px] font-mono text-focus-slate">{linkedLectures.length} {t.lectures_plural}</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {linkedLectures.length > 0 ? (
-                    linkedLectures.map(lecture => (
-                      <GlassCard 
-                        key={lecture.id} 
-                        onClick={() => onEditLecture(lecture)}
-                        className="p-4 flex items-center justify-between group hover:bg-white/5 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center group-hover:bg-focus-cyan/10 transition-colors">
-                            <BookOpen size={16} className="text-focus-cyan" />
-                          </div>
-                          <div className="text-left">
-                            <p className="text-sm font-medium">{lecture.title}</p>
-                            <p className="text-[10px] text-focus-slate font-mono">{Math.round((isFinite(lecture.progress) ? lecture.progress : 0) * 100)}% {t.mastered}</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-1.5">
-                          <div className="flex items-center gap-1">
-                            <History size={8} className="text-focus-cyan" />
-                            <span className="text-[8px] font-mono text-focus-cyan">{lecture.studyCount || 0}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Target size={8} className="text-focus-gold" />
-                            <span className="text-[8px] font-mono text-focus-gold">{lecture.practiceCount || 0}</span>
-                          </div>
-                        </div>
-                      </GlassCard>
-                    ))
-                  ) : (
-                    <div className="p-8 text-center glass rounded-2xl border-dashed border-white/10">
-                      <AlertCircle size={24} className="mx-auto text-focus-slate mb-2" />
-                      <p className="text-xs text-focus-slate">{t.no_exam_lectures}</p>
-                      <button 
-                        onClick={() => onEditExam(exam)}
-                        className="mt-3 text-[10px] font-bold uppercase tracking-widest text-focus-cyan hover:underline"
-                      >
-                        {t.link_lectures}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </section>
+        <div className="space-y-12">
+          {upcomingExams.length > 0 && (
+            <div className="space-y-8">
+              <div className="flex items-center gap-4 px-1">
+                 <div className="h-px flex-1 bg-gradient-to-r from-focus-cyan/20 to-transparent" />
+                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-focus-cyan">{t.upcoming_missions}</h3>
+                 <div className="h-px flex-1 bg-gradient-to-l from-focus-cyan/20 to-transparent" />
+              </div>
+              {upcomingExams.map(exam => renderExam(exam, false))}
             </div>
-          );
-        })
+          )}
+
+          {completedExams.length > 0 && (
+            <div className="space-y-4">
+              <button 
+                onClick={() => setShowCompleted(!showCompleted)}
+                className="flex items-center gap-4 w-full group"
+              >
+                 <div className="h-px flex-1 bg-gradient-to-r from-focus-slate/20 to-transparent" />
+                 <div className="flex items-center gap-2">
+                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-focus-slate group-hover:text-white transition-colors">{t.completed_missions}</h3>
+                    <div className={cn("transition-transform", showCompleted && "rotate-180")}>
+                      <ChevronDown size={14} className="text-focus-slate" />
+                    </div>
+                 </div>
+                 <div className="h-px flex-1 bg-gradient-to-l from-focus-slate/20 to-transparent" />
+              </button>
+              
+              {showCompleted && (
+                <div className="space-y-4 animate-in slide-in-from-top duration-300">
+                  {completedExams.map(exam => renderExam(exam, true))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       ) : (
         <div className="py-20 text-center glass rounded-3xl border-dashed border-white/10">
           <Target size={48} className="mx-auto text-white/5 mb-4" />

@@ -101,14 +101,24 @@ export function getCategorizedPriority(
   currentRound: number = 1,
   subjects: Subject[] = []
 ): CategoryPriorityBreakdown {
-  const now = Date.now();
+  const nowRaw = Date.now();
+  // Normalize to 15-minute chunks to avoid micro-drifts during a session
+  const now = Math.floor(nowRaw / (1000 * 60 * 15)) * (1000 * 60 * 15);
   
-  // Helper to safely get days since a date
+  // Helper to safely get days since a date (Normalized to Start of Day for same-day consistency)
   const getDaysSince = (dateStr?: string) => {
     if (!dateStr) return 7;
-    const time = new Date(dateStr).getTime();
+    const dateObj = new Date(dateStr);
+    const time = dateObj.getTime();
     if (isNaN(time)) return 7;
-    return Math.max(0, (now - time) / (1000 * 60 * 60 * 24));
+    
+    // Normalize both now and target date to UTC start of day for stable "Days" calculation
+    const d1 = new Date(now);
+    d1.setUTCHours(0, 0, 0, 0);
+    const d2 = new Date(dateObj);
+    d2.setUTCHours(0, 0, 0, 0);
+    
+    return Math.max(0, (d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24));
   };
 
   // Determine current academic week
@@ -117,152 +127,133 @@ export function getCategorizedPriority(
     const start = new Date(semesterStartDate).getTime();
     if (isNaN(start)) return 1;
     const diffDays = (now - start) / (1000 * 60 * 60 * 24);
-    // Day 0-6 = Week 1, Day 7-13 = Week 2
     return Math.max(1, Math.floor(diffDays / 7) + 1);
   };
 
-  // 1. NEW LECTURES (S, C, T)
-  const currentWeek = getCurrentWeek();
-  const weeksDiff = lecture.week ? (currentWeek - (Number(lecture.week) || 0)) : (getDaysSince(lecture.date) / 7);
-  // Ensure we don't have negative days for future weeks
-  const daysSinceTaken = Math.max(0, (isFinite(weeksDiff) ? weeksDiff : 0) * 7);
+  // --- CORE ATTRIBUTES (Physical lecture properties - stable across subjects) ---
+  const diffBase = Number(lecture.difficulty) || 0.5;
+  const sizeBase = Math.min(1.5, (Number(lecture.pageCount) || 0) / 25);
   
-  const newS = (Number(lecture.difficulty) || 0.5) * (weights.newDifficulty || 0);
-  const newC = Math.min(1, (Number(lecture.pageCount) || 0) / 30) * (weights.newSize || 0);
-  
-  // Recency decay for new topics: prioritize recent lectures but allow old ones to stay relevant
-  const recencyMultiplier = Math.max(0.2, 1 - (daysSinceTaken / 28));
-  const newT = recencyMultiplier * (weights.newRecency || 0);
-  const newTotal = newS + newC + newT;
+  const scoreDifficulty = diffBase * (weights.newDifficulty || 35);
+  const scoreSize = sizeBase * (weights.newSize || 30);
 
-  // 2. REVISION (Scientific Spaced Repetition - Maintenance)
-  // Mastery M: If selfExamScore is null, we assume a "fresh study" baseline
-  const baseMastery = lecture.selfExamScore ?? 40;
-  const masteryM = ((100 - baseMastery) / 100) * (weights.reviewMastery || 0);
+  // --- DYNAMIC COMPONENTS (Temporal/Mastery) ---
   
-  // Spaced Repetition Interval (SRI): Intervals grow as you review more.
+  // 1. Recency (Dynamics)
+  const currentWeek = getCurrentWeek();
+  const rawWeekVal = lecture.week !== undefined ? Number(lecture.week) : undefined;
+  const weeksDiff = rawWeekVal !== undefined ? (currentWeek - rawWeekVal) : (getDaysSince(lecture.date) / 7);
+  const daysSinceTaken = Math.max(0, (isFinite(weeksDiff) ? weeksDiff : 0) * 7);
+  const recencyMultiplier = Math.max(0.3, 1 - (daysSinceTaken / 42));
+  const newUrgencyRaw = (recencyMultiplier * (weights.newRecency || 35)) + 15;
+
+  // 2. Mastery & Spaced Repetition (Dynamics)
+  const baseMastery = lecture.selfExamScore ?? 40;
+  const masteryM = ((100 - baseMastery) / 100) * (weights.reviewMastery || 40);
   const reviews = lecture.studyCount || 0;
-  const retentionInterval = 1 + (reviews * 3.0); // Grows: 1, 4, 7, 10 days...
+  const retentionInterval = 1 + (reviews * 3.0);
   const daysSinceLastReview = getDaysSince(lecture.lastReviewDate);
   const reviewStaleness = Math.min(2.0, daysSinceLastReview / retentionInterval);
-  
-  const reviewR = (1 / (1 + Math.log10(1 + reviews))) * (weights.reviewCount || 0);
-  const reviewTLast = reviewStaleness * (weights.reviewStaleness || 0);
-  const reviewTotal = (masteryM + reviewR + reviewTLast) * (lecture.progress || 1);
- 
-  // 3. PRACTICE (Interleaved Retrieval Practice - GOLD STANDARD)
+  const reviewR = (1 / (1 + Math.log10(1 + reviews))) * (weights.reviewCount || 30);
+  const reviewTLast = reviewStaleness * (weights.reviewStaleness || 30);
+  const reviewUrgencyRaw = (masteryM + reviewR + reviewTLast);
+
+  // 3. Retrieval Strength (Dynamics)
   const baseAccuracy = lecture.lastAccuracy ?? 50;
-  const accuracyA = ((100 - baseAccuracy) / 100) * (weights.solvingAccuracy || 0);
-  const solveS = (lecture.difficulty || 0.5) * (weights.solvingDifficulty || 0);
-  
-  // Practice happens much more frequently than revision.
-  const practiceInterval = 1 + (lecture.practiceCount || 0) * 1.5; // Shorter intervals (Scientific: Retrieval Emphasis)
+  const accuracyA = ((100 - baseAccuracy) / 100) * (weights.solvingAccuracy || 40);
+  const practiceInterval = 1 + (lecture.practiceCount || 0) * 1.5;
   const daysSinceLastSolve = getDaysSince(lecture.lastPracticeDate);
   const solveStaleness = Math.min(2.5, daysSinceLastSolve / practiceInterval);
-  const solveTLast = solveStaleness * (weights.solvingStaleness || 0);
-  
-  // Practice Total with a fundamental bias boost
-  const solveTotal = (accuracyA + solveS + solveTLast) * 1.4;
+  const solveTLast = solveStaleness * (weights.solvingStaleness || 30);
+  const solveUrgencyRaw = (accuracyA + solveTLast);
 
-  const scores = {
-    new: isFinite(newTotal) ? Math.round(newTotal) : 0,
-    solving: isFinite(solveTotal) ? Math.round(solveTotal) : 0,
-    review: isFinite(reviewTotal) ? Math.round(reviewTotal) : 0
-  };
-
-  // 4. SATURATION PENALTY & SAME-DAY GUARD
+  // --- CONTEXT MULTIPLIERS (Applied to final score or specific category) ---
   const lastTouchDays = Math.min(daysSinceLastReview, daysSinceLastSolve);
-  let finalMultiplier = 1.0;
+  let contextMult = 1.0;
 
-  if (lastTouchDays < 0.9) {
-    finalMultiplier = 0.05; // Strict Same-Day Guard: If touched today, virtually silent.
-  } else if (lastTouchDays < 1.9) {
-    finalMultiplier = 0.75; // Discourage same subject two days in a row if alternatives exist.
+  // Cooldown Guard
+  if (lastTouchDays < 0.5) {
+    const isNewTopic = (lecture.studyCount || 0) <= 0;
+    contextMult = isNewTopic ? 0.6 : 0.2; 
+  } else if (lastTouchDays < 1.5) {
+    contextMult = 0.9; 
   }
 
-  // 5. EXAM PROXIMITY BOOST
+  // Exam Proximity
   const linkedExams = exams.filter(e => 
     e.linkedLectureIds.some(id => String(id) === String(lecture.id)) || String(lecture.examId) === String(e.id)
   ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  if (linkedExams.length > 0) {
-    const nextExam = linkedExams[0];
-    const examTime = new Date(nextExam.date).getTime();
-    const daysUntilExam = (examTime - now) / (1000 * 60 * 60 * 24);
-
-    if (daysUntilExam >= 0 && daysUntilExam <= 14) {
-      // Scale from 2.0x at 14 days to 10.0x at 0 days (Aggressive Cramming Boost)
-      const proximityBoost = 2.0 + (1 - (daysUntilExam / 14)) * 8.0;
-      
-      // If exam is in less than 3 days, we bypass the saturation/same-day guard
-      // to permit recursive cramming sessions.
-      if (daysUntilExam < 3) {
-        finalMultiplier = Math.max(finalMultiplier, 1.2); 
-      }
-      
-      finalMultiplier *= proximityBoost;
-    }
+  
+  const daysUntilExam = linkedExams.length > 0 ? (new Date(linkedExams[0].date).getTime() - now) / (1000 * 60 * 60 * 24) : 100;
+  if (daysUntilExam >= 0 && daysUntilExam <= 14) {
+    const examBoost = 2.0 + (1 - (daysUntilExam / 14)) * 8.0;
+    contextMult *= examBoost;
+    if (daysUntilExam < 3) contextMult = Math.max(contextMult, 1.5); 
   }
 
-  // --- SPIRAL MAINTENANCE LOGIC (FOR PREVIOUS ROUNDS) ---
+  // Round Logic
   const parentSubject = subjects.find(s => String(s.id) === String(lecture.subjectId));
   const isPastRound = parentSubject?.round !== undefined && Number(parentSubject.round) < currentRound;
+  const roundFactor = isPastRound ? 1.5 : 1.0;
+  const roundPenaltyNew = isPastRound ? 0.5 : 1.0; // Penalty for NEW lectures in OLD rounds
   
-  if (isPastRound) {
-    // 1.5x boost to review/solve for old rounds effectively keeps them prioritized
-    scores.review = Math.round(scores.review * 1.5);
-    scores.solving = Math.round(scores.solving * 1.5);
-    // 0.2x penalty to "New" study for old rounds
-    scores.new = Math.round(scores.new * 0.2);
-  }
+  const safeVal = (v: number) => isFinite(v) ? Math.round(v) : 0;
 
-  const safeVal = (v: number) => isFinite(v) ? v : 0;
+  // --- PATH SELECTION ---
+  const isNew = (lecture.studyCount || 0) === 0 && (lecture.progress || 0) < 0.5;
+  const practiceDone = lecture.practiceDone || (lecture.practiceCount || 0) >= 1;
+  const examSolvingBias = (daysUntilExam < 3 && daysUntilExam >= -0.5) ? 1.8 : 1.0;
+  
+  const solveTotalBase = solveUrgencyRaw * 1.6 * (practiceDone ? examSolvingBias : 2.0);
+  const reviewTotalBase = reviewUrgencyRaw * (lecture.progress || 1);
 
-  // CATEGORY SELECTION
-  // A. NEW (Foundation)
-  if ((lecture.studyCount || 0) === 0 && (lecture.progress || 0) < 0.5) {
-    const finalNewScore = Math.round(scores.new * finalMultiplier);
+  if (isNew) {
+    const dynamicUrgency = newUrgencyRaw * contextMult * roundPenaltyNew;
+    const c1 = safeVal(scoreDifficulty);
+    const c2 = safeVal(scoreSize);
+    const c3 = safeVal(newUrgencyRaw);
+    const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
+    
     return {
       category: 'new',
-      scores: { ...scores, new: finalNewScore },
-      component1: { label: 'Difficulty (S)', score: safeVal(newS) },
-      component2: { label: 'Size (C)', score: safeVal(newC) },
-      component3: { label: 'Recency (T)', score: safeVal(newT) },
-      modifiers: 0,
-      total: finalNewScore
+      scores: { new: finalTotal, solving: 0, review: 0 },
+      component1: { label: 'Difficulty', score: c1 },
+      component2: { label: 'Volume (Size)', score: c2 },
+      component3: { label: 'Urgency (Temporal)', score: c3 },
+      modifiers: Math.round(dynamicUrgency - newUrgencyRaw),
+      total: finalTotal
     };
-  } 
-  
-  // B. SOLVING vs REVIEW ( Strategic Retrieval Bias )
-  const practiceDone = lecture.practiceDone || (lecture.practiceCount || 0) >= 1;
-  const solvingMultiplier = practiceDone ? 1.0 : 2.0; // Stronger bias for initial practice
-  
-  // Decide best mode based on weighted "Staleness" and "Retrieval Need"
-  // If exam is very close (< 3 days), we significantly bias towards Solving (Active Retrieval)
-  const daysUntilExam = linkedExams.length > 0 ? (new Date(linkedExams[0].date).getTime() - now) / (1000 * 60 * 60 * 24) : 100;
-  const examSolvingBias = (daysUntilExam < 3 && daysUntilExam >= -0.5) ? 1.8 : 1.0;
-
-  if (!practiceDone || (solveTotal * solvingMultiplier * examSolvingBias) > (reviewTotal * 0.85)) {
-    const finalSolvingScore = Math.round(solveTotal * finalMultiplier * (practiceDone ? examSolvingBias : 2.0));
+  } else if (!practiceDone || solveTotalBase > reviewTotalBase) {
+    const dynamicUrgency = solveTotalBase * contextMult * roundFactor;
+    const c1 = safeVal(scoreDifficulty);
+    const c2 = safeVal(scoreSize);
+    const c3 = safeVal(solveUrgencyRaw * 1.6);
+    const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
+    
     return {
       category: 'solving',
-      scores: { ...scores, solving: finalSolvingScore },
-      component1: { label: 'Accuracy (A)', score: safeVal(accuracyA) },
-      component2: { label: 'Difficulty (S)', score: safeVal(solveS) },
-      component3: { label: 'Staleness', score: safeVal(solveTLast) },
-      modifiers: practiceDone ? (daysUntilExam < 3 ? 0.8 : 0) : 1.0,
-      total: finalSolvingScore
+      scores: { new: 0, solving: finalTotal, review: 0 },
+      component1: { label: 'Difficulty', score: c1 },
+      component2: { label: 'Volume (Size)', score: c2 },
+      component3: { label: 'Urgency (Retrieval)', score: c3 },
+      modifiers: Math.round(dynamicUrgency - (solveUrgencyRaw * 1.6)),
+      total: finalTotal
     };
   } else {
-    const finalReviewScore = Math.round(reviewTotal * finalMultiplier);
+    const dynamicUrgency = reviewTotalBase * contextMult * roundFactor;
+    const c1 = safeVal(scoreDifficulty);
+    const c2 = safeVal(scoreSize);
+    const c3 = safeVal(reviewUrgencyRaw);
+    const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
+    
     return {
       category: 'review',
-      scores: { ...scores, review: finalReviewScore },
-      component1: { label: 'Mastery (M)', score: safeVal(masteryM) },
-      component2: { label: 'Reviews (R)', score: safeVal(reviewR) },
-      component3: { label: 'Staleness', score: safeVal(reviewTLast) },
-      modifiers: 0,
-      total: finalReviewScore
+      scores: { new: 0, solving: 0, review: finalTotal },
+      component1: { label: 'Difficulty', score: c1 },
+      component2: { label: 'Volume (Size)', score: c2 },
+      component3: { label: 'Urgency (Retention)', score: c3 },
+      modifiers: Math.round(dynamicUrgency - reviewUrgencyRaw),
+      total: finalTotal
     };
   }
 }
@@ -325,11 +316,8 @@ export function calculateFocusScore(
 
 // --- SCORING SYSTEM RESTORE PLAN ---
 // The priority system uses a Non-Linear Contrast Enhancement Equation to "spread" scores.
-// If the distribution feels too aggressive or "broken":
-// 1. To Linearize: Set CONTRAST_FACTOR to 1.0.
-// 2. To Compress: Set CONTRAST_FACTOR between 0.5 and 0.9.
-// 3. To Restore Legacy: Revert to returning rawScore directly.
-const CONTRAST_FACTOR = 1.1;
+// Linear distribution (1.0) is more intuitive for users seeing raw values.
+const CONTRAST_FACTOR = 1.0;
 
 export function calculatePriorityScore(
   task: Task,

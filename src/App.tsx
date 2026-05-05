@@ -682,10 +682,14 @@ const PriorityBreakdown = ({ lecture, subjects, weights, exams, currentRound, t,
             </div>
           </div>
         ))}
-        {breakdown.modifiers > 0 && (
+        {Math.abs(breakdown.modifiers) >= 0.5 && (
           <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider pt-1">
-            <span className="text-focus-slate">{language === 'ar' ? 'مكافأة الزخم' : 'Momentum Bonus'}</span>
-            <span className="text-focus-cyan">+{breakdown.modifiers}</span>
+            <span className="text-focus-slate">
+              {language === 'ar' ? 'تعديلات استراتيجية' : 'Strategy Adjustments'}
+            </span>
+            <span className={cn(breakdown.modifiers > 0 ? "text-focus-cyan" : "text-rose-400")}>
+              {breakdown.modifiers > 0 ? `+${Math.round(breakdown.modifiers)}` : Math.round(breakdown.modifiers)}
+            </span>
           </div>
         )}
       </div>
@@ -2310,7 +2314,7 @@ const PriorityEngine = ({
                   <input 
                     type="range" 
                     min="0"
-                    max="50"
+                    max="100"
                     value={isFinite((weights as any)[factor.key]) ? (weights as any)[factor.key] : 0} 
                     onChange={(e) => onWeightChange(factor.key as any, parseInt(e.target.value) || 0)}
                     className="w-full accent-focus-cyan" 

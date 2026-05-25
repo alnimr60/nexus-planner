@@ -153,8 +153,13 @@ const Dashboard = ({
     }
 
     // 2. Handle Incomplete Tasks (Dynamic Priority Queue)
-    const incompleteTasks = tasks
-      .filter(t => !t.completed)
+    const allTaskPool = tasks
+      .filter(t => {
+        if (!t.completed) return true;
+        // Include tasks completed TODAY in the selection pool to keep the list stable
+        if (t.completedDate && new Date(t.completedDate) >= now && new Date(t.completedDate) < nextDay) return true;
+        return false;
+      })
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => String(l.id) === String(t.lectureId)) : null;
         let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects);
@@ -169,19 +174,18 @@ const Dashboard = ({
         
         // Final fallback if still no type
         const finalType: TaskType = type || 'new';
+
+        // Boost completed tasks so they don't fall off the daily limit selection
+        const finalScore = t.completed ? score + 1000 : score;
         
-        return { ...t, priorityScore: score, type: finalType };
+        return { ...t, priorityScore: finalScore, type: finalType };
       });
 
-    // Get tasks completed TODAY
-    const completedToday = tasks.filter(t => 
-      t.completed && 
-      t.completedDate && 
-      new Date(t.completedDate) >= now && 
-      new Date(t.completedDate) < nextDay
-    );
-
-    const sortedIncomplete = [...incompleteTasks].sort((a,b) => (b.priorityScore || 0) - (a.priorityScore || 0));
+    const sortedPool = [...allTaskPool].sort((a,b) => {
+      const scoreA = a.priorityScore || 0;
+      const scoreB = b.priorityScore || 0;
+      return scoreB - scoreA;
+    });
 
     // Helper to pick tasks based on quota and allocation
     const getSelectedForQuota = (pool: any[], quota: number) => {
@@ -199,7 +203,6 @@ const Dashboard = ({
       let totalAllocated = newQuota + reviewQuota + solvingQuota;
       if (totalAllocated !== quota) {
         let diff = quota - totalAllocated;
-        // give diff to the highest allocation category
         if (allocation.new >= allocation.review && allocation.new >= allocation.solving) {
           newQuota += diff;
         } else if (allocation.review >= allocation.solving) {
@@ -224,38 +227,55 @@ const Dashboard = ({
       return selected.slice(0, quota);
     };
 
-    // Today: Balanced Daily Quota
+    // Today: Balanced Daily Quota - STABLE SELECTION
     if (day === 'today') {
-      const remainingFill = Math.max(0, dailyTaskLimit - completedToday.length);
-      const selected = getSelectedForQuota(sortedIncomplete, remainingFill);
-      return [...completedToday, ...selected];
+      const completedToday = sortedPool.filter(t => t.completed);
+      const incompletePool = sortedPool.filter(t => !t.completed);
+      
+      // Calculate how many MORE we need to reach the limit
+      const remainingQuota = Math.max(0, dailyTaskLimit - completedToday.length);
+      
+      // Select best incomplete ones based on the quotas
+      // We use the FULL dailyTaskLimit to calculate the category ratios for consistency
+      const rawSelection = getSelectedForQuota(sortedPool, dailyTaskLimit);
+      
+      // The "Selection" for today is: 
+      // All things already completed + any things that WERE in the top selection and are still incomplete
+      const selectionIds = new Set(rawSelection.map(s => s.id));
+      const completedIds = new Set(completedToday.map(c => c.id));
+      
+      // Combine: All completed tasks + any incomplete tasks that belong in the Top selection
+      const finalTasks = [
+        ...completedToday, 
+        ...incompletePool.filter(ip => selectionIds.has(ip.id))
+      ];
+
+      return finalTasks.sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0));
     }
     
     // Tomorrow: The "Next" tasks after Today's projection
     if (day === 'tomorrow') {
-      const remainingTodayCount = Math.max(0, dailyTaskLimit - completedToday.length);
-      const todaySelected = getSelectedForQuota(sortedIncomplete, remainingTodayCount);
-      const todaySelectedIds = new Set(todaySelected.map(s => s.id));
+      const todaySelection = getSelectedForQuota(sortedPool, dailyTaskLimit);
+      const todaySelectedIds = new Set(todaySelection.map(s => s.id));
       
-      const poolForTomorrow = sortedIncomplete.filter(p => !todaySelectedIds.has(p.id));
+      const poolForTomorrow = sortedPool.filter(p => !todaySelectedIds.has(p.id) && !p.completed);
       return getSelectedForQuota(poolForTomorrow, dailyTaskLimit);
     }
 
     // After Tomorrow: The batch after Tomorrow's projection
     if (day === 'after') {
-      const remainingTodayCount = Math.max(0, dailyTaskLimit - completedToday.length);
-      const todaySelected = getSelectedForQuota(sortedIncomplete, remainingTodayCount);
-      const todaySelectedIds = new Set(todaySelected.map(s => s.id));
+      const todaySelection = getSelectedForQuota(sortedPool, dailyTaskLimit);
+      const todaySelectedIds = new Set(todaySelection.map(s => s.id));
       
-      const poolForTomorrow = sortedIncomplete.filter(p => !todaySelectedIds.has(p.id));
-      const tomorrowSelected = getSelectedForQuota(poolForTomorrow, dailyTaskLimit);
-      const tomorrowSelectedIds = new Set(tomorrowSelected.map(s => s.id));
+      const poolForTomorrow = sortedPool.filter(p => !todaySelectedIds.has(p.id) && !p.completed);
+      const tomorrowSelection = getSelectedForQuota(poolForTomorrow, dailyTaskLimit);
+      const tomorrowSelectedIds = new Set(tomorrowSelection.map(s => s.id));
 
       const poolForAfter = poolForTomorrow.filter(p => !tomorrowSelectedIds.has(p.id));
       return getSelectedForQuota(poolForAfter, dailyTaskLimit);
     }
     
-    return sortedIncomplete.slice(0, 5);
+    return sortedPool.slice(0, 5);
   };
 
   const dayTasks = getTasksForDay(selectedDay);
@@ -1111,9 +1131,11 @@ const WeeklyLogScreen = ({ tasks, lectures, t }: { tasks: Task[], lectures: Lect
                     <div className="w-10 h-10 rounded-xl bg-focus-cyan/10 flex items-center justify-center text-focus-cyan shrink-0">
                       <CheckCircle2 size={20} />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 text-left">
                       <h3 className="text-sm font-bold text-white truncate">{lecture?.title || 'Unknown Lecture'}</h3>
-                      <p className="text-[10px] text-focus-slate uppercase tracking-wider">{task.type}</p>
+                      <p className="text-[10px] text-focus-slate uppercase tracking-wider">
+                        {task.type === 'new' ? t.foundation : task.type === 'solving' ? t.solving : task.type === 'review' ? t.revision : task.type}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">

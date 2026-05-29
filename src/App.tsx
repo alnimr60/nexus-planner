@@ -3326,6 +3326,7 @@ export default function App() {
   };
 
   const addLecture = (subjectId: string, title: string) => {
+    const currentWeekValue = semesterStartDate ? Math.max(1, Math.floor((Date.now() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1) : 1;
     const newLecture: Lecture = {
       id: Math.random().toString(36).substr(2, 9),
       subjectId,
@@ -3340,9 +3341,10 @@ export default function App() {
       estimatedStudyTime: 30,
       progress: 0,
       abandonedSessionsCount: 0,
-      relatedLectureIds: []
+      relatedLectureIds: [],
+      week: currentWeekValue
     };
-    setLectures(prev => [...prev, newLecture]);
+    setLectures(prev => [newLecture, ...prev]);
     setIsAddLectureOpen(false);
     setEditingLecture(newLecture); // Spontaneous properties
   };
@@ -3595,6 +3597,7 @@ export default function App() {
       });
 
       // Second pass: Everything else
+      const currentWeekValue = semesterStartDate ? Math.max(1, Math.floor((Date.now() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1) : 1;
       result.items.forEach((item: any) => {
         const id = item.id || Math.random().toString(36).substr(2, 9);
         if (item.type === 'lecture') {
@@ -3630,7 +3633,8 @@ export default function App() {
             practiceDone: false,
             examAttempts: 0,
             estimatedStudyTime: 30,
-            relatedLectureIds: []
+            relatedLectureIds: [],
+            week: item.week || currentWeekValue
           });
         } else if (item.type === 'task') {
           newTasks.push({
@@ -3652,7 +3656,7 @@ export default function App() {
         }
       });
 
-      if (newLectures.length) setLectures(prev => [...prev, ...newLectures]);
+      if (newLectures.length) setLectures(prev => [...newLectures, ...prev]);
       if (newTasks.length) setTasks(prev => [...prev, ...newTasks]);
       if (newSubjects.length) setSubjects(prev => [...prev, ...newSubjects]);
       if (newExams.length) setExams(prev => [...prev, ...newExams]);
@@ -3669,6 +3673,7 @@ export default function App() {
       setTasks([newTask, ...tasks]);
     } else if (result.intent === 'add_lecture') {
       const sId = result.subjectId || (subjects.length > 0 ? subjects[0].id : '');
+      const currentWeekValue = semesterStartDate ? Math.max(1, Math.floor((Date.now() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1) : 1;
       if (sId) {
         const newLecture: Lecture = {
           id: Math.random().toString(36).substr(2, 9),
@@ -3684,9 +3689,10 @@ export default function App() {
           practiceDone: false,
           examAttempts: 0,
           estimatedStudyTime: 30,
-          relatedLectureIds: []
+          relatedLectureIds: [],
+          week: result.week || currentWeekValue
         };
-        setLectures([...lectures, newLecture]);
+        setLectures([newLecture, ...lectures]);
       }
     } else if (result.intent === 'add_subject') {
       const newSubject: Subject = {
@@ -3806,6 +3812,7 @@ export default function App() {
         });
 
         // Second pass: Everything else
+        const currentWeekValue = semesterStartDate ? Math.max(1, Math.floor((Date.now() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1) : 1;
         result.items.forEach((item: any) => {
           const id = item.id || Math.random().toString(36).substr(2, 9);
           if (item.type === 'lecture') {
@@ -3841,7 +3848,8 @@ export default function App() {
               practiceDone: false,
               examAttempts: 0,
               estimatedStudyTime: 30,
-              relatedLectureIds: []
+              relatedLectureIds: [],
+              week: item.week || currentWeekValue
             });
           } else if (item.type === 'task') {
             newTasks.push({
@@ -3863,7 +3871,7 @@ export default function App() {
           }
         });
 
-        if (newLectures.length) setLectures(prev => [...prev, ...newLectures]);
+        if (newLectures.length) setLectures(prev => [...newLectures, ...prev]);
         if (newTasks.length) setTasks(prev => [...prev, ...newTasks]);
         if (newSubjects.length) setSubjects(prev => [...prev, ...newSubjects]);
         if (newExams.length) setExams(prev => [...prev, ...newExams]);

@@ -158,13 +158,26 @@ const Dashboard = ({
         if (!t.completed) {
           if (t.lectureId) {
             const lecture = lectures.find(l => String(l.id) === String(t.lectureId));
-            if (lecture && lecture.date) {
-              const lDate = new Date(lecture.date);
-              lDate.setHours(0, 0, 0, 0);
-              const compDate = new Date(targetDate);
-              compDate.setHours(0, 0, 0, 0);
-              if (lDate.getTime() > compDate.getTime()) {
-                return false;
+            if (lecture) {
+              if (lecture.date) {
+                const lDate = new Date(lecture.date);
+                lDate.setHours(0, 0, 0, 0);
+                const compDate = new Date(targetDate);
+                compDate.setHours(0, 0, 0, 0);
+                if (lDate.getTime() > compDate.getTime()) {
+                  return false;
+                }
+              }
+              if (lecture.week !== undefined && lecture.week !== null && semesterStartDate) {
+                const startTime = new Date(semesterStartDate).getTime();
+                if (!isNaN(startTime)) {
+                  const targetTime = targetDate.getTime();
+                  const daysDiff = (targetTime - startTime) / (1000 * 60 * 60 * 24);
+                  const targetWeek = Math.max(1, Math.floor(daysDiff / 7) + 1);
+                  if (Number(lecture.week) > targetWeek) {
+                    return false;
+                  }
+                }
               }
             }
           }

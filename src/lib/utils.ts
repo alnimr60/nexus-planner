@@ -122,6 +122,26 @@ export function getCategorizedPriority(
     }
   }
 
+  // If the lecture has a week and that week is in the future, it is not yet active, so has 0 priority
+  if (lecture.week !== undefined && lecture.week !== null && semesterStartDate) {
+    const start = new Date(semesterStartDate).getTime();
+    if (!isNaN(start)) {
+      const diffDays = (nowRaw - start) / (1000 * 60 * 60 * 24);
+      const currentWeek = Math.max(1, Math.floor(diffDays / 7) + 1);
+      if (Number(lecture.week) > currentWeek) {
+        return {
+          category: 'new',
+          scores: { new: 0, solving: 0, review: 0 },
+          component1: { label: 'Difficulty', score: 0 },
+          component2: { label: 'Volume (Size)', score: 0 },
+          component3: { label: 'Urgency (Future)', score: 0 },
+          modifiers: 0,
+          total: 0
+        };
+      }
+    }
+  }
+
   // Normalize to 15-minute chunks to avoid micro-drifts during a session
   const now = Math.floor(nowRaw / (1000 * 60 * 15)) * (1000 * 60 * 15);
   

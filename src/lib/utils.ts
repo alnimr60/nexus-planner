@@ -102,6 +102,26 @@ export function getCategorizedPriority(
   subjects: Subject[] = []
 ): CategoryPriorityBreakdown {
   const nowRaw = Date.now();
+  
+  // If the lecture has a date and that date is in the future, it is not yet active, so has 0 priority
+  if (lecture.date) {
+    const lectureDate = new Date(lecture.date);
+    lectureDate.setHours(0, 0, 0, 0);
+    const today = new Date(nowRaw);
+    today.setHours(0, 0, 0, 0);
+    if (lectureDate.getTime() > today.getTime()) {
+      return {
+        category: 'new',
+        scores: { new: 0, solving: 0, review: 0 },
+        component1: { label: 'Difficulty', score: 0 },
+        component2: { label: 'Volume (Size)', score: 0 },
+        component3: { label: 'Urgency (Future)', score: 0 },
+        modifiers: 0,
+        total: 0
+      };
+    }
+  }
+
   // Normalize to 15-minute chunks to avoid micro-drifts during a session
   const now = Math.floor(nowRaw / (1000 * 60 * 15)) * (1000 * 60 * 15);
   

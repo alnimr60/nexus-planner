@@ -155,7 +155,21 @@ const Dashboard = ({
     // 2. Handle Incomplete Tasks (Dynamic Priority Queue)
     const allTaskPool = tasks
       .filter(t => {
-        if (!t.completed) return true;
+        if (!t.completed) {
+          if (t.lectureId) {
+            const lecture = lectures.find(l => String(l.id) === String(t.lectureId));
+            if (lecture && lecture.date) {
+              const lDate = new Date(lecture.date);
+              lDate.setHours(0, 0, 0, 0);
+              const compDate = new Date(targetDate);
+              compDate.setHours(0, 0, 0, 0);
+              if (lDate.getTime() > compDate.getTime()) {
+                return false;
+              }
+            }
+          }
+          return true;
+        }
         // Include tasks completed TODAY in the selection pool to keep the list stable
         if (t.completedDate && new Date(t.completedDate) >= now && new Date(t.completedDate) < nextDay) return true;
         return false;

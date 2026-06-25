@@ -256,6 +256,11 @@ export function getCategorizedPriority(
   const solveTotalBase = solveUrgencyRaw * 1.6 * (practiceDone ? examSolvingBias : 2.0);
   const reviewTotalBase = reviewUrgencyRaw * (lecture.progress || 1);
 
+  const lastReviewTime = lecture.lastReviewDate ? new Date(lecture.lastReviewDate).getTime() : 0;
+  const lastPracticeTime = lecture.lastPracticeDate ? new Date(lecture.lastPracticeDate).getTime() : 0;
+  // If practice is done, and the most recent session was practice, force a consolidation review task next
+  const needsReviewAfterPractice = practiceDone && (lastPracticeTime > lastReviewTime);
+
   if (isNew) {
     const dynamicUrgency = newUrgencyRaw * contextMult * roundPenaltyNew;
     const c1 = safeVal(scoreDifficulty);
@@ -272,7 +277,7 @@ export function getCategorizedPriority(
       modifiers: Math.round(dynamicUrgency - newUrgencyRaw),
       total: finalTotal
     };
-  } else if (!practiceDone || solveTotalBase > reviewTotalBase) {
+  } else if (solveTotalBase > reviewTotalBase && !needsReviewAfterPractice) {
     const dynamicUrgency = solveTotalBase * contextMult * roundFactor;
     const c1 = safeVal(scoreDifficulty);
     const c2 = safeVal(scoreSize);

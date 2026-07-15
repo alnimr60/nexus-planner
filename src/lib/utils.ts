@@ -98,7 +98,7 @@ export function getCategorizedPriority(
   weights: PriorityWeights,
   semesterStartDate?: string,
   exams: Exam[] = [],
-  currentRound: number = 1,
+  activeRounds: number[] = [1],
   subjects: Subject[] = []
 ): CategoryPriorityBreakdown {
   const nowRaw = Date.now();
@@ -214,9 +214,11 @@ export function getCategorizedPriority(
   // Cooldown Guard
   if (lastTouchDays < 0.5) {
     const isNewTopic = (lecture.studyCount || 0) <= 0;
-    contextMult = isNewTopic ? 0.6 : 0.2; 
+    const isReadyForPractice = !isNewTopic && (lecture.practiceCount || 0) === 0;
+    // Boost recently touched topics, allowing seamless same-day transition to practice (0.8) or review (0.4) instead of a punishing 0.2
+    contextMult = isNewTopic ? 0.6 : (isReadyForPractice ? 0.8 : 0.4); 
   } else if (lastTouchDays < 1.5) {
-    contextMult = 0.9; 
+    contextMult = 0.95; 
   }
 
   // Exam Proximity (Active if Today or in the Future)
@@ -242,19 +244,20 @@ export function getCategorizedPriority(
 
   // Round Logic
   const parentSubject = subjects.find(s => String(s.id) === String(lecture.subjectId));
-  const isPastRound = parentSubject?.round !== undefined && Number(parentSubject.round) < currentRound;
+  const isPastRound = parentSubject?.round !== undefined && !activeRounds.includes(Number(parentSubject.round));
   const roundFactor = isPastRound ? 1.5 : 1.0;
   const roundPenaltyNew = isPastRound ? 0.5 : 1.0; // Penalty for NEW lectures in OLD rounds
   
   const safeVal = (v: number) => isFinite(v) ? Math.round(v) : 0;
 
   // --- PATH SELECTION ---
-  const isNew = (lecture.studyCount || 0) === 0 && (lecture.progress || 0) < 0.5;
+  const isNew = (lecture.studyCount || 0) === 0 && (lecture.progress || 0) < 0.3; // Lowered from 0.5 to 0.3 to graduate sooner
   const practiceDone = lecture.practiceDone || (lecture.practiceCount || 0) >= 1;
   const examSolvingBias = (daysUntilExam < 3 && daysUntilExam >= -0.5) ? 1.8 : 1.0;
   
-  const solveTotalBase = solveUrgencyRaw * 1.6 * (practiceDone ? examSolvingBias : 2.0);
-  const reviewTotalBase = reviewUrgencyRaw * (lecture.progress || 1);
+  // Boost base scaling for solving (1.8 instead of 1.6) and review (1.3 multiplier) to make them more competitive against study (new) tasks
+  const solveTotalBase = solveUrgencyRaw * 1.8 * (practiceDone ? examSolvingBias : 2.2);
+  const reviewTotalBase = reviewUrgencyRaw * 1.3 * (lecture.progress || 1);
 
   const lastReviewTime = lecture.lastReviewDate ? new Date(lecture.lastReviewDate).getTime() : 0;
   const lastPracticeTime = lecture.lastPracticeDate ? new Date(lecture.lastPracticeDate).getTime() : 0;
@@ -281,7 +284,7 @@ export function getCategorizedPriority(
     const dynamicUrgency = solveTotalBase * contextMult * roundFactor;
     const c1 = safeVal(scoreDifficulty);
     const c2 = safeVal(scoreSize);
-    const c3 = safeVal(solveUrgencyRaw * 1.6);
+    const c3 = safeVal(solveUrgencyRaw * 1.8);
     const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
     
     return {
@@ -290,14 +293,14 @@ export function getCategorizedPriority(
       component1: { label: 'Difficulty', score: c1 },
       component2: { label: 'Volume (Size)', score: c2 },
       component3: { label: 'Urgency (Retrieval)', score: c3 },
-      modifiers: Math.round(dynamicUrgency - (solveUrgencyRaw * 1.6)),
+      modifiers: Math.round(dynamicUrgency - (solveUrgencyRaw * 1.8)),
       total: finalTotal
     };
   } else {
     const dynamicUrgency = reviewTotalBase * contextMult * roundFactor;
     const c1 = safeVal(scoreDifficulty);
     const c2 = safeVal(scoreSize);
-    const c3 = safeVal(reviewUrgencyRaw);
+    const c3 = safeVal(reviewUrgencyRaw * 1.3);
     const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
     
     return {
@@ -306,7 +309,7 @@ export function getCategorizedPriority(
       component1: { label: 'Difficulty', score: c1 },
       component2: { label: 'Volume (Size)', score: c2 },
       component3: { label: 'Urgency (Retention)', score: c3 },
-      modifiers: Math.round(dynamicUrgency - reviewUrgencyRaw),
+      modifiers: Math.round(dynamicUrgency - (reviewUrgencyRaw * 1.3)),
       total: finalTotal
     };
   }
@@ -318,10 +321,10 @@ export function getLecturePriorityScore(
   exams: Exam[],
   weights: PriorityWeights,
   semesterStartDate?: string,
-  currentRound: number = 1,
+  activeRounds: number[] = [1],
   subjects: Subject[] = []
 ): number {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
   return Math.round(breakdown.total);
 }
 
@@ -389,7 +392,7 @@ export function calculatePriorityScore(
     solvingStaleness: 30
   },
   semesterStartDate?: string,
-  currentRound: number = 1,
+  activeRounds: number[] = [1],
   subjects: Subject[] = []
 ): number {
   let rawScore = 0;
@@ -397,7 +400,7 @@ export function calculatePriorityScore(
   if (task.lectureId) {
     const lecture = lectures.find(l => String(l.id) === String(task.lectureId));
     if (lecture) {
-      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
+      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
       rawScore = breakdown.total;
     }
   } else {

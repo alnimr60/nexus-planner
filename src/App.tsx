@@ -108,7 +108,7 @@ const Dashboard = ({
   onOpenWeeklyLog,
   focusScore,
   dailyTaskLimit,
-  currentRound,
+  activeRounds,
   t,
   language,
   semesterStartDate
@@ -128,7 +128,7 @@ const Dashboard = ({
   onOpenWeeklyLog: () => void,
   focusScore: number,
   dailyTaskLimit: number,
-  currentRound: number,
+  activeRounds: number[],
   t: any,
   language: Language,
   semesterStartDate?: string
@@ -189,11 +189,11 @@ const Dashboard = ({
       })
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => String(l.id) === String(t.lectureId)) : null;
-        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects);
+        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, activeRounds, subjects);
         let type = t.type;
         
         if (lecture) {
-           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
+           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
            if (!type) {
              type = breakdown.category;
            }
@@ -671,17 +671,17 @@ const Dashboard = ({
   );
 };
 
-const PriorityBreakdown = ({ lecture, subjects, weights, exams, currentRound, t, language, semesterStartDate }: { 
+const PriorityBreakdown = ({ lecture, subjects, weights, exams, activeRounds, t, language, semesterStartDate }: { 
   lecture: Lecture, 
   subjects: Subject[],
   weights: PriorityWeights, 
   exams: Exam[],
-  currentRound: number,
+  activeRounds: number[],
   t: any, 
   language: Language, 
   semesterStartDate?: string 
 }) => {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
   
   return (
     <div className="glass p-4 rounded-xl space-y-3 border border-white/5">
@@ -750,7 +750,7 @@ const LectureIntelligenceForm = ({
   lectures,
   exams,
   weights,
-  currentRound,
+  activeRounds,
   onSave, 
   onDelete,
   t,
@@ -762,7 +762,7 @@ const LectureIntelligenceForm = ({
   lectures: Lecture[],
   exams: Exam[],
   weights: PriorityWeights,
-  currentRound: number,
+  activeRounds: number[],
   onSave: (updated: Lecture) => void, 
   onDelete: (id: string) => void,
   t: any,
@@ -828,7 +828,7 @@ const LectureIntelligenceForm = ({
         subjects={subjects}
         weights={weights} 
         exams={exams}
-        currentRound={currentRound}
+        activeRounds={activeRounds}
         t={t} 
         language={language} 
         semesterStartDate={semesterStartDate} 
@@ -1193,7 +1193,7 @@ const LibraryScreen = ({
   lectures, 
   exams,
   weights,
-  currentRound,
+  activeRounds,
   onAddSubject, 
   onAddLecture, 
   onEditLecture,
@@ -1207,7 +1207,7 @@ const LibraryScreen = ({
   lectures: Lecture[], 
   exams: Exam[],
   weights: PriorityWeights,
-  currentRound: number,
+  activeRounds: number[],
   onAddSubject: () => void, 
   onAddLecture: () => void, 
   onEditLecture: (lecture: Lecture) => void,
@@ -1438,7 +1438,7 @@ const LibraryScreen = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredLectures.length > 0 ? (
             filteredLectures.map(lecture => {
-              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, currentRound, subjects);
+              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, activeRounds, subjects);
               const subject = subjects.find(s => String(s.id) === String(lecture.subjectId));
               const isSelected = selectedLectureIds.includes(lecture.id);
 
@@ -2118,8 +2118,8 @@ const PriorityEngine = ({
   onToggleAI,
   dailyTaskLimit,
   onDailyTaskLimitChange,
-  currentRound,
-  onCurrentRoundChange,
+  activeRounds,
+  onActiveRoundsChange,
   language,
   onLanguageChange,
   onOpenTutorial,
@@ -2143,8 +2143,8 @@ const PriorityEngine = ({
   onToggleAI: (val: boolean) => void,
   dailyTaskLimit: number,
   onDailyTaskLimitChange: (val: number) => void,
-  currentRound: number,
-  onCurrentRoundChange: (val: number) => void,
+  activeRounds: number[],
+  onActiveRoundsChange: (val: number[]) => void,
   language: Language,
   onLanguageChange: (val: Language) => void,
   onOpenTutorial: () => void,
@@ -2280,15 +2280,31 @@ const PriorityEngine = ({
           <GlassCard id="current-round-card" className="p-6 space-y-6">
             <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-focus-slate">
               <span>{t.current_round}</span>
-              <span className="text-purple-400">{t.round || 'Round'} {currentRound}</span>
+              <span className="text-purple-400">{t.round || 'Round'} {activeRounds.sort((a,b) => a-b).join(', ')}</span>
             </div>
             <div className="space-y-4">
-              <input 
-                type="range" min="1" max="10" step="1"
-                value={currentRound}
-                onChange={(e) => onCurrentRoundChange(parseInt(e.target.value))}
-                className="w-full h-1 bg-white/5 rounded-full appearance-none cursor-pointer accent-purple-400"
-              />
+              <div className="flex flex-wrap gap-2 justify-center">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(r => {
+                  const isActive = activeRounds.includes(r);
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => {
+                        if (isActive) {
+                          if (activeRounds.length > 1) {
+                            onActiveRoundsChange(activeRounds.filter(ar => ar !== r));
+                          }
+                        } else {
+                          onActiveRoundsChange([...activeRounds, r]);
+                        }
+                      }}
+                      className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${isActive ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'bg-white/5 text-focus-slate hover:bg-white/10'}`}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
               <p className="text-[10px] text-focus-slate text-center">{t.round_desc}</p>
             </div>
           </GlassCard>
@@ -3022,15 +3038,23 @@ export default function App() {
     return d.toISOString().split('T')[0];
   });
 
-  const [currentRound, setCurrentRound] = useState<number>(() => {
+  const [activeRounds, setActiveRounds] = useState<number[]>(() => {
     const saved = localStorage.getItem('focus_current_round');
-    const parsed = saved ? JSON.parse(saved) : 1;
-    return isFinite(parsed) ? parsed : 1;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+        if (isFinite(parsed)) return [parsed];
+      } catch (e) {
+        // ignore
+      }
+    }
+    return [1];
   });
 
   useEffect(() => {
-    localStorage.setItem('focus_current_round', JSON.stringify(currentRound));
-  }, [currentRound]);
+    localStorage.setItem('focus_current_round', JSON.stringify(activeRounds));
+  }, [activeRounds]);
 
   const [profiles, setProfiles] = useState<{ name: string, weights: PriorityWeights }[]>(() => {
     const saved = localStorage.getItem('focus_profiles');
@@ -3139,7 +3163,7 @@ export default function App() {
     // When the user changes allocation, weights, limit, or academic stage, we "clear the deck"
     // so the auto-generation effect can refill it with tasks that match the new constraints.
     setTasks(prev => prev.filter(t => t.completed || !t.id.startsWith('auto-')));
-  }, [allocation, weights, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
+  }, [allocation, weights, dailyTaskLimit, semesterStartDate, subjects, activeRounds]);
 
   // 2. Generation logic: Refill the dashboard based on Current State
   useEffect(() => {
@@ -3147,7 +3171,7 @@ export default function App() {
       const gTasks: Task[] = [];
       
       lectures.forEach(lecture => {
-        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, currentRound, subjects);
+        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
         const { category, total } = breakdown;
         
         if (total > 2) {
@@ -3195,8 +3219,8 @@ export default function App() {
              const existingIncomplete = prev.find(pt => !pt.completed && String(pt.lectureId) === lectureId && pt.type === type);
              if (existingIncomplete) return false;
 
-             // 2. Strong Same-Day Guard: Block if ANY task for this lecture was completed in the last 18 hours
-             // BYPASSED if exam is in < 3 days (Cramming Mode)
+             // 2. Focused Same-Day Guard: Only block if a task of the SAME type was completed in the last 12 hours.
+             // This lets users progress from Study -> Practice -> Revision on the same day without artificial 18-hour delays!
              const isExamCram = exams.some(e => {
                 const examTime = new Date(e.date).getTime();
                 const daysUntil = (examTime - Date.now()) / (1000 * 60 * 60 * 24);
@@ -3204,8 +3228,14 @@ export default function App() {
                 return isLinked && daysUntil < 3 && daysUntil >= -0.5;
              });
 
-             const anyCompletedRecently = prev.find(pt => pt.completed && String(pt.lectureId) === lectureId && pt.completedDate && (Date.now() - new Date(pt.completedDate).getTime() < 18 * 60 * 60 * 1000));
-             if (anyCompletedRecently && !isExamCram) return false;
+             const sameTypeCompletedRecently = prev.find(pt => 
+               pt.completed && 
+               String(pt.lectureId) === lectureId && 
+               pt.type === type && 
+               pt.completedDate && 
+               (Date.now() - new Date(pt.completedDate).getTime() < 12 * 60 * 60 * 1000)
+             );
+             if (sameTypeCompletedRecently && !isExamCram) return false;
 
              return true;
           });
@@ -3220,7 +3250,7 @@ export default function App() {
 
     const timer = setTimeout(autoGenerateTasks, 500); 
     return () => clearTimeout(timer);
-  }, [lectures, exams, weights, allocation, dailyTaskLimit, semesterStartDate, subjects, currentRound]);
+  }, [lectures, exams, weights, allocation, dailyTaskLimit, semesterStartDate, subjects, activeRounds]);
 
   const toggleTask = (id: string) => {
     setTasks(prev => {
@@ -3473,7 +3503,7 @@ export default function App() {
       language,
       isAIEnabled,
       semesterStartDate,
-      currentRound,
+      activeRounds,
       exportDate: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -3512,7 +3542,7 @@ export default function App() {
         setLanguage(data.language || language);
         if (data.isAIEnabled !== undefined) setIsAIEnabled(data.isAIEnabled);
         if (data.semesterStartDate) setSemesterStartDate(data.semesterStartDate);
-        if (data.currentRound) setCurrentRound(data.currentRound);
+        if (data.activeRounds) setActiveRounds(data.activeRounds);
 
         alert(t.import_success);
         window.location.reload();
@@ -3945,7 +3975,7 @@ export default function App() {
                 onOpenWeeklyLog={() => setActiveTab('weekly_log')}
                 focusScore={focusScore}
                 dailyTaskLimit={dailyTaskLimit}
-                currentRound={currentRound}
+                activeRounds={activeRounds}
                 t={t}
                 language={language}
                 semesterStartDate={semesterStartDate}
@@ -3959,7 +3989,7 @@ export default function App() {
                 lectures={lectures} 
                 exams={exams}
                 weights={weights}
-                currentRound={currentRound}
+                activeRounds={activeRounds}
                 onAddSubject={() => setIsAddSubjectOpen(true)}
                 onAddLecture={() => setIsAddLectureOpen(true)}
                 onEditLecture={(lecture) => setEditingLecture(lecture)}
@@ -4024,8 +4054,8 @@ export default function App() {
                 onToggleAI={setIsAIEnabled}
                 dailyTaskLimit={dailyTaskLimit}
                 onDailyTaskLimitChange={setDailyTaskLimit}
-                currentRound={currentRound}
-                onCurrentRoundChange={setCurrentRound}
+                activeRounds={activeRounds}
+                onActiveRoundsChange={setActiveRounds}
                 language={language}
                 onLanguageChange={setLanguage}
                 onOpenTutorial={() => setIsTutorialOpen(true)}
@@ -4146,7 +4176,7 @@ export default function App() {
             {tasks
               .filter(t => taskFilter === 'active' ? !t.completed : t.completed)
               .filter(t => t.title.toLowerCase().includes(taskSearch.toLowerCase()))
-              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, currentRound, subjects) }))
+              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, activeRounds, subjects) }))
               .sort((a, b) => {
                 // Pin manual tasks to the top if they have equal or near-equal score
                 const aManual = !a.id.startsWith('auto-');
@@ -4371,7 +4401,7 @@ export default function App() {
             lectures={lectures}
             exams={exams}
             weights={weights}
-            currentRound={currentRound}
+            activeRounds={activeRounds}
             semesterStartDate={semesterStartDate}
             onSave={(updated) => {
               updateLecture(updated);

@@ -99,7 +99,8 @@ export function getCategorizedPriority(
   semesterStartDate?: string,
   exams: Exam[] = [],
   activeRounds: number[] = [1],
-  subjects: Subject[] = []
+  subjects: Subject[] = [],
+  allocation?: DailyAllocation
 ): CategoryPriorityBreakdown {
   const nowRaw = Date.now();
   
@@ -267,7 +268,9 @@ export function getCategorizedPriority(
   const examSolvingBias = (daysUntilExam < 3 && daysUntilExam >= -0.5) ? 1.8 : 1.0;
   
   // Boost base scaling for solving (1.8 instead of 1.6) and review (1.3 multiplier) to make them more competitive against study (new) tasks
-  const solveTotalBase = solveUrgencyRaw * 1.8 * (practiceDone ? examSolvingBias : 2.2);
+  // Ensure that the path selection logic doesn't overly bias 'Solving' for newly studied topics. We use 1.2 instead of 2.2 for practiceDone = false.
+  const solveMultiplier = practiceDone ? examSolvingBias : 1.2;
+  const solveTotalBase = solveUrgencyRaw * 1.8 * solveMultiplier;
   const reviewTotalBase = reviewUrgencyRaw * 1.3 * (lecture.progress || 1);
 
   const lastReviewTime = lecture.lastReviewDate ? new Date(lecture.lastReviewDate).getTime() : 0;
@@ -275,7 +278,31 @@ export function getCategorizedPriority(
   // If practice is done, and the most recent session was practice, force a consolidation review task next
   const needsReviewAfterPractice = practiceDone && (lastPracticeTime > lastReviewTime);
 
-  if (isNew) {
+  // Determine allowed categories based on daily allocation
+  const canNew = !allocation || allocation.new > 0;
+  const canSolve = !allocation || allocation.solving > 0;
+  const canReview = !allocation || allocation.review > 0;
+
+  let chosenCategory: TaskType = 'review';
+  if (isNew && canNew) {
+    chosenCategory = 'new';
+  } else {
+    if (canSolve && !canReview) {
+      chosenCategory = 'solving';
+    } else if (canReview && !canSolve) {
+      chosenCategory = 'review';
+    } else if (!canReview && !canSolve) {
+      chosenCategory = isNew ? 'new' : 'review';
+    } else {
+      if (solveTotalBase > reviewTotalBase && !needsReviewAfterPractice) {
+        chosenCategory = 'solving';
+      } else {
+        chosenCategory = 'review';
+      }
+    }
+  }
+
+  if (chosenCategory === 'new') {
     const dynamicUrgency = newUrgencyRaw * contextMult * roundPenaltyNew;
     const c1 = safeVal(scoreDifficulty);
     const c2 = safeVal(scoreSize);
@@ -291,7 +318,7 @@ export function getCategorizedPriority(
       modifiers: Math.round(dynamicUrgency - newUrgencyRaw),
       total: finalTotal
     };
-  } else if (solveTotalBase > reviewTotalBase && !needsReviewAfterPractice) {
+  } else if (chosenCategory === 'solving') {
     const dynamicUrgency = solveTotalBase * contextMult * roundFactor;
     const c1 = safeVal(scoreDifficulty);
     const c2 = safeVal(scoreSize);
@@ -333,9 +360,10 @@ export function getLecturePriorityScore(
   weights: PriorityWeights,
   semesterStartDate?: string,
   activeRounds: number[] = [1],
-  subjects: Subject[] = []
+  subjects: Subject[] = [],
+  allocation?: DailyAllocation
 ): number {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
   return Math.round(breakdown.total);
 }
 
@@ -404,14 +432,15 @@ export function calculatePriorityScore(
   },
   semesterStartDate?: string,
   activeRounds: number[] = [1],
-  subjects: Subject[] = []
+  subjects: Subject[] = [],
+  allocation?: DailyAllocation
 ): number {
   let rawScore = 0;
 
   if (task.lectureId) {
     const lecture = lectures.find(l => String(l.id) === String(task.lectureId));
     if (lecture) {
-      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
+      const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
       rawScore = breakdown.total;
     }
   } else {

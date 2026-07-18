@@ -202,11 +202,11 @@ const Dashboard = ({
       })
       .map(t => {
         const lecture = t.lectureId ? lectures.find(l => String(l.id) === String(t.lectureId)) : null;
-        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, activeRounds, subjects);
+        let score = calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, activeRounds, subjects, allocation);
         let type = t.type;
         
         if (lecture) {
-           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
+           const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
            if (!type) {
              type = breakdown.category;
            }
@@ -239,15 +239,15 @@ const Dashboard = ({
       let reviewQuota = Math.max(0, Math.round(quota * (allocation.review / 100)));
       let solvingQuota = Math.max(0, Math.round(quota * (allocation.solving / 100)));
 
-      // Handle rounding errors so they add up to exactly 'quota'
+      // Handle rounding errors so they add up to exactly 'quota' without giving quota to 0% categories
       let totalAllocated = newQuota + reviewQuota + solvingQuota;
       if (totalAllocated !== quota) {
         let diff = quota - totalAllocated;
-        if (allocation.new >= allocation.review && allocation.new >= allocation.solving) {
+        if (allocation.new > 0 && allocation.new >= allocation.review && allocation.new >= allocation.solving) {
           newQuota += diff;
-        } else if (allocation.review >= allocation.solving) {
+        } else if (allocation.review > 0 && allocation.review >= allocation.solving) {
           reviewQuota += diff;
-        } else {
+        } else if (allocation.solving > 0) {
           solvingQuota += diff;
         }
       }
@@ -261,7 +261,13 @@ const Dashboard = ({
       const extraNeeded = quota - selected.length;
       if (extraNeeded > 0) {
         const currentSelectedIds = new Set(selected.map(s => s.id));
-        const leftovers = pool.filter(p => !currentSelectedIds.has(p.id));
+        // Only pull tasks from categories with non-zero allocation
+        const leftovers = pool.filter(p => {
+          if (currentSelectedIds.has(p.id)) return false;
+          const taskType = p.type || 'new';
+          const alloc = allocation[taskType as keyof typeof allocation] ?? 0;
+          return alloc > 0;
+        });
         selected.push(...leftovers.slice(0, extraNeeded));
       }
       return selected.slice(0, quota);
@@ -684,7 +690,7 @@ const Dashboard = ({
   );
 };
 
-const PriorityBreakdown = ({ lecture, subjects, weights, exams, activeRounds, t, language, semesterStartDate }: { 
+const PriorityBreakdown = ({ lecture, subjects, weights, exams, activeRounds, t, language, semesterStartDate, allocation }: { 
   lecture: Lecture, 
   subjects: Subject[],
   weights: PriorityWeights, 
@@ -692,9 +698,10 @@ const PriorityBreakdown = ({ lecture, subjects, weights, exams, activeRounds, t,
   activeRounds: number[],
   t: any, 
   language: Language, 
-  semesterStartDate?: string 
+  semesterStartDate?: string,
+  allocation?: DailyAllocation
 }) => {
-  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
+  const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
   
   return (
     <div className="glass p-4 rounded-xl space-y-3 border border-white/5">
@@ -768,7 +775,8 @@ const LectureIntelligenceForm = ({
   onDelete,
   t,
   language,
-  semesterStartDate
+  semesterStartDate,
+  allocation
 }: { 
   lecture: Lecture, 
   subjects: Subject[], 
@@ -780,7 +788,8 @@ const LectureIntelligenceForm = ({
   onDelete: (id: string) => void,
   t: any,
   language: Language,
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  allocation?: DailyAllocation
 }) => {
   const [formData, setFormData] = useState<Lecture>(lecture);
 
@@ -845,6 +854,7 @@ const LectureIntelligenceForm = ({
         t={t} 
         language={language} 
         semesterStartDate={semesterStartDate} 
+        allocation={allocation}
       />
 
       <div className="space-y-4">
@@ -1214,7 +1224,8 @@ const LibraryScreen = ({
   onBulkUpdateLectures,
   t,
   language,
-  semesterStartDate
+  semesterStartDate,
+  allocation
 }: { 
   subjects: Subject[], 
   lectures: Lecture[], 
@@ -1228,7 +1239,8 @@ const LibraryScreen = ({
   onBulkUpdateLectures: (ids: string[], updates: Partial<Lecture>) => void,
   t: any,
   language: Language,
-  semesterStartDate?: string
+  semesterStartDate?: string,
+  allocation?: DailyAllocation
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
@@ -1451,7 +1463,7 @@ const LibraryScreen = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredLectures.length > 0 ? (
             filteredLectures.map(lecture => {
-              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, activeRounds, subjects);
+              const score = getLecturePriorityScore(lecture, lectures, exams, weights, semesterStartDate, activeRounds, subjects, allocation);
               const subject = subjects.find(s => String(s.id) === String(lecture.subjectId));
               const isSelected = selectedLectureIds.includes(lecture.id);
 
@@ -3297,7 +3309,7 @@ export default function App() {
       const gTasks: Task[] = [];
       
       lectures.forEach(lecture => {
-        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects);
+        const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
         const { category, total } = breakdown;
         
         if (total > 2) {
@@ -4219,6 +4231,7 @@ export default function App() {
                 t={t}
                 language={language}
                 semesterStartDate={semesterStartDate}
+                allocation={allocation}
               />
             </motion.div>
           )}
@@ -4403,7 +4416,7 @@ export default function App() {
             {tasks
               .filter(t => taskFilter === 'active' ? !t.completed : t.completed)
               .filter(t => t.title.toLowerCase().includes(taskSearch.toLowerCase()))
-              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, activeRounds, subjects) }))
+              .map(t => ({ ...t, score: calculatePriorityScore(t, lectures, exams, weights, semesterStartDate, activeRounds, subjects, allocation) }))
               .sort((a, b) => {
                 // Pin manual tasks to the top if they have equal or near-equal score
                 const aManual = !a.id.startsWith('auto-');
@@ -4630,6 +4643,7 @@ export default function App() {
             weights={weights}
             activeRounds={activeRounds}
             semesterStartDate={semesterStartDate}
+            allocation={allocation}
             onSave={(updated) => {
               updateLecture(updated);
               setEditingLecture(null);

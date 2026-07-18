@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { cn, Subject, Lecture, Exam, Task, calculatePriorityScore, getLecturePriorityScore, getCategorizedPriority, PriorityWeights, TaskType, DailyAllocation, calculateFocusScore } from './lib/utils';
 import { MOCK_SUBJECTS, MOCK_LECTURES, MOCK_EXAMS, MOCK_TASKS } from './constants';
-import { generateNarrative, processPulsePrompt } from './services/geminiService';
+import { generateNarrative, processPulsePrompt, analyzeSmartLectures } from './services/geminiService';
 
 import { translations, Language } from './lib/translations';
 
@@ -2128,7 +2128,13 @@ const PriorityEngine = ({
   onSemesterStartDateChange,
   onExport,
   onImport,
-  onOpenWeeklyLog
+  onOpenWeeklyLog,
+  aiProvider,
+  onAiProviderChange,
+  openrouterApiKey,
+  onOpenrouterApiKeyChange,
+  openrouterModel,
+  onOpenrouterModelChange
 }: { 
   weights: PriorityWeights, 
   onWeightChange: (key: keyof PriorityWeights, val: number) => void,
@@ -2153,7 +2159,13 @@ const PriorityEngine = ({
   onSemesterStartDateChange: (val: string) => void,
   onExport: () => void,
   onImport: (e: React.ChangeEvent<HTMLInputElement>) => void,
-  onOpenWeeklyLog: () => void
+  onOpenWeeklyLog: () => void,
+  aiProvider: string,
+  onAiProviderChange: (val: string) => void,
+  openrouterApiKey: string,
+  onOpenrouterApiKeyChange: (val: string) => void,
+  openrouterModel: string,
+  onOpenrouterModelChange: (val: string) => void
 }) => {
   const factorGroups = [
     {
@@ -2187,6 +2199,7 @@ const PriorityEngine = ({
   const [renamingName, setRenamingName] = useState<string | null>(null); // Current profile being renamed
   const [tempRenameValue, setTempRenameValue] = useState(""); // The actual input value
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const handleFinishRename = (oldName: string) => {
     const finalName = tempRenameValue.trim();
@@ -2562,6 +2575,90 @@ const PriorityEngine = ({
             </button>
           </div>
 
+          {isAIEnabled && (
+            <div className="pt-4 border-t border-white/5 space-y-4 animate-in fade-in duration-300">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-focus-slate">{t.ai_provider || 'AI Provider'}</p>
+              <div className="grid grid-cols-2 gap-3">
+                {(['gemini', 'openrouter'] as const).map(prov => (
+                  <button
+                    key={prov}
+                    onClick={() => onAiProviderChange(prov)}
+                    className={cn(
+                      "p-3 rounded-xl border transition-all text-[10px] font-bold uppercase tracking-widest",
+                      aiProvider === prov ? "border-focus-cyan bg-focus-cyan/10 text-focus-cyan" : "border-white/5 text-focus-slate hover:bg-white/5"
+                    )}
+                  >
+                    {prov === 'gemini' ? (t.gemini_default || 'Gemini (Default)') : (t.openrouter || 'OpenRouter')}
+                  </button>
+                ))}
+              </div>
+
+              {aiProvider === 'openrouter' && (
+                <div className="space-y-4 pt-2 animate-in slide-in-from-top-4 duration-300">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-focus-slate">
+                      {t.openrouter_api_key || 'OpenRouter API Key'}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={openrouterApiKey}
+                        onChange={(e) => onOpenrouterApiKeyChange(e.target.value)}
+                        placeholder={t.openrouter_key_placeholder || "sk-or-v1-..."}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-focus-cyan placeholder:text-focus-slate"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-focus-slate hover:text-white text-xs"
+                      >
+                        {showApiKey ? (language === 'ar' ? 'إخفاء' : 'Hide') : (language === 'ar' ? 'عرض' : 'Show')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-focus-slate">
+                      {t.openrouter_model || 'OpenRouter Model'}
+                    </label>
+                    <select
+                      value={
+                        ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'meta-llama/llama-3-8b-instruct:free'].includes(openrouterModel)
+                          ? openrouterModel
+                          : 'custom'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'custom') {
+                          onOpenrouterModelChange('');
+                        } else {
+                          onOpenrouterModelChange(val);
+                        }
+                      }}
+                      className="w-full bg-focus-bg border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-focus-cyan"
+                    >
+                      <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B Instruct (Free)</option>
+                      <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                      <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
+                      <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B Instruct (Free)</option>
+                      <option value="custom">{language === 'ar' ? 'موديل مخصص...' : 'Custom Model...'}</option>
+                    </select>
+
+                    {(!['meta-llama/llama-3.3-70b-instruct:free', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'meta-llama/llama-3-8b-instruct:free'].includes(openrouterModel) || openrouterModel === '') && (
+                      <input
+                        type="text"
+                        value={openrouterModel}
+                        onChange={(e) => onOpenrouterModelChange(e.target.value)}
+                        placeholder={t.openrouter_model_placeholder || "e.g., meta-llama/llama-3.3-70b-instruct:free"}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white mt-2 focus:outline-none focus:border-focus-cyan animate-in slide-in-from-top-2 duration-200 placeholder:text-focus-slate"
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Language Selection moved to the end */}
           <div className="pt-4 border-t border-white/5 space-y-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-focus-slate">{t.language}</p>
@@ -2907,10 +3004,23 @@ export default function App() {
   const [bulkInput, setBulkInput] = useState('');
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [importResults, setImportResults] = useState<{type: string, title: string}[] | null>(null);
+  const [importTab, setImportTab] = useState<'standard' | 'smart'>('standard');
+  const [analyzedLectures, setAnalyzedLectures] = useState<any[] | null>(null);
+  const [selectedSmartLectures, setSelectedSmartLectures] = useState<Record<string, boolean>>({});
+  const [isSmartAnalyzing, setIsSmartAnalyzing] = useState(false);
   const [isFocusModalOpen, setIsFocusModalOpen] = useState(false);
   const [isAIEnabled, setIsAIEnabled] = useState(() => {
     const saved = localStorage.getItem('focus_ai_enabled');
     return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [aiProvider, setAiProvider] = useState(() => {
+    return localStorage.getItem('focus_ai_provider') || 'gemini';
+  });
+  const [openrouterApiKey, setOpenrouterApiKey] = useState(() => {
+    return localStorage.getItem('focus_openrouter_api_key') || '';
+  });
+  const [openrouterModel, setOpenrouterModel] = useState(() => {
+    return localStorage.getItem('focus_openrouter_model') || 'meta-llama/llama-3.3-70b-instruct:free';
   });
   const [taskFilter, setTaskFilter] = useState<'active' | 'completed'>('active');
   const [taskSearch, setTaskSearch] = useState('');
@@ -3121,7 +3231,10 @@ export default function App() {
     localStorage.setItem('focus_language', language);
     localStorage.setItem('focus_ai_enabled', JSON.stringify(isAIEnabled));
     localStorage.setItem('focus_semester_start', semesterStartDate);
-  }, [subjects, lectures, exams, tasks, weights, allocation, dailyTaskLimit, profiles, isAIEnabled, language, semesterStartDate]);
+    localStorage.setItem('focus_ai_provider', aiProvider);
+    localStorage.setItem('focus_openrouter_api_key', openrouterApiKey);
+    localStorage.setItem('focus_openrouter_model', openrouterModel);
+  }, [subjects, lectures, exams, tasks, weights, allocation, dailyTaskLimit, profiles, isAIEnabled, language, semesterStartDate, aiProvider, openrouterApiKey, openrouterModel]);
 
   useEffect(() => {
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
@@ -3945,6 +4058,101 @@ export default function App() {
     }
   };
 
+  const handleAnalyzeSmartSyllabus = async () => {
+    if (!bulkInput.trim()) return;
+    setIsSmartAnalyzing(true);
+    setAnalyzedLectures(null);
+    try {
+      const res = await analyzeSmartLectures(bulkInput, subjects, lectures);
+      if (res && res.items) {
+        setAnalyzedLectures(res.items);
+        const selected: Record<string, boolean> = {};
+        res.items.forEach((item: any, idx: number) => {
+          selected[idx] = item.status === 'add';
+        });
+        setSelectedSmartLectures(selected);
+      }
+    } catch (err) {
+      console.error("Smart Analysis Error:", err);
+    } finally {
+      setIsSmartAnalyzing(false);
+    }
+  };
+
+  const handleApproveSmartImport = () => {
+    if (!analyzedLectures) return;
+    const itemsToImport = analyzedLectures.filter((_, idx) => selectedSmartLectures[idx]);
+    if (itemsToImport.length === 0) return;
+
+    const currentWeekValue = semesterStartDate ? Math.max(1, Math.floor((Date.now() - new Date(semesterStartDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1) : 1;
+    const newLectures: Lecture[] = [];
+    const newSubjects: Subject[] = [];
+
+    const subjectMap = new Map<string, string>();
+    subjects.forEach(s => subjectMap.set(s.name.toLowerCase().trim(), s.id));
+
+    itemsToImport.forEach((item: any) => {
+      let sId = item.subjectId;
+      if (!sId && item.subjectName) {
+        const lowerName = item.subjectName.toLowerCase().trim();
+        if (subjectMap.has(lowerName)) {
+          sId = subjectMap.get(lowerName)!;
+        } else {
+          // Create subject
+          sId = Math.random().toString(36).substr(2, 9);
+          newSubjects.push({
+            id: sId,
+            name: item.subjectName,
+            color: 'bg-focus-cyan',
+            coverage: 0
+          });
+          subjectMap.set(lowerName, sId);
+        }
+      }
+
+      if (!sId && subjects.length > 0) {
+        sId = subjects[0].id;
+      } else if (!sId) {
+        // Fallback to "General"
+        const genName = 'General';
+        const genNameLower = genName.toLowerCase();
+        if (subjectMap.has(genNameLower)) {
+          sId = subjectMap.get(genNameLower)!;
+        } else {
+          sId = Math.random().toString(36).substr(2, 9);
+          newSubjects.push({ id: sId, name: genName, color: 'bg-focus-cyan', coverage: 0 });
+          subjectMap.set(genNameLower, sId);
+        }
+      }
+
+      newLectures.push({
+        id: Math.random().toString(36).substr(2, 9),
+        subjectId: sId,
+        title: item.title,
+        date: item.date || new Date().toISOString().split('T')[0],
+        pageCount: item.pageCount || 10,
+        progress: 0,
+        difficulty: 0.5,
+        studyCount: 0,
+        practiceCount: 0,
+        abandonedSessionsCount: 0,
+        practiceDone: false,
+        examAttempts: 0,
+        estimatedStudyTime: 30,
+        relatedLectureIds: [],
+        week: item.week || currentWeekValue
+      });
+    });
+
+    if (newLectures.length) setLectures(prev => [...newLectures, ...prev]);
+    if (newSubjects.length) setSubjects(prev => [...prev, ...newSubjects]);
+
+    // Show result view or reset
+    setImportResults(newLectures.map(l => ({ type: 'lecture', title: l.title })));
+    setBulkInput('');
+    setAnalyzedLectures(null);
+  };
+
   const focusScore = calculateFocusScore(tasks, lectures);
 
   return (
@@ -4065,6 +4273,12 @@ export default function App() {
                 onExport={exportData}
                 onImport={handleImport}
                 onOpenWeeklyLog={() => setActiveTab('weekly_log')}
+                aiProvider={aiProvider}
+                onAiProviderChange={setAiProvider}
+                openrouterApiKey={openrouterApiKey}
+                onOpenrouterApiKeyChange={setOpenrouterApiKey}
+                openrouterModel={openrouterModel}
+                onOpenrouterModelChange={setOpenrouterModel}
               />
             </motion.div>
           )}
@@ -4417,72 +4631,230 @@ export default function App() {
         )}
       </Modal>
 
-      <Modal isOpen={isBulkImportOpen} onClose={() => { setIsBulkImportOpen(false); setImportResults(null); }} title={t.nexus_syllabus_importer}>
+      <Modal isOpen={isBulkImportOpen} onClose={() => { setIsBulkImportOpen(false); setImportResults(null); setAnalyzedLectures(null); }} title={t.nexus_syllabus_importer}>
         <div className="space-y-6">
-          <div className="p-4 rounded-xl bg-focus-cyan/5 border border-focus-cyan/20 space-y-2">
-            <p className="text-xs text-focus-cyan leading-relaxed">
-              {t.nexus_importer_desc} 
-              {isAIEnabled ? ` ${t.ai_detect_desc}` : ` ${t.structured_import_desc}`}
-            </p>
-            {!isAIEnabled && (
-              <div className="grid grid-cols-2 gap-2 text-[9px] font-mono text-focus-slate">
-                <div>Subject: Physics</div>
-                <div>Exam: Final Exam</div>
-                <div>Task: Order Book</div>
-                <div>General Topic Title</div>
-              </div>
-            )}
-          </div>
-
-          <textarea
-            value={bulkInput}
-            onChange={(e) => setBulkInput(e.target.value)}
-            disabled={isBulkProcessing}
-            placeholder={isAIEnabled ? "Lecture 1: Intro to Physics (Oct 10)..." : "Subject: Biology\nCell Structure\nGenetics\nExam: Midterm"}
-            className="w-full h-48 glass border-focus-border rounded-xl p-4 text-sm focus:ring-1 focus:ring-focus-cyan outline-none resize-none font-mono"
-          />
-
-          {importResults && (
-            <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-focus-gold">
-                {importResults.length > 0 ? t.imported_success.replace('{count}', importResults.length.toString()) : t.imported_none}
-              </p>
-              {importResults.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/5">
-                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-focus-cyan/20 text-focus-cyan uppercase font-bold tracking-tighter">
-                    {item.type}
-                  </span>
-                  <span className="text-[11px] text-focus-text truncate">{item.title}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex gap-3">
+          <div className="flex gap-2 p-1 glass rounded-xl">
             <button 
-              onClick={() => { setIsBulkImportOpen(false); setImportResults(null); }}
-              className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-focus-slate text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-all"
+              onClick={() => { setImportTab('standard'); setImportResults(null); }}
+              className={cn(
+                "flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all",
+                importTab === 'standard' ? "bg-focus-cyan text-focus-bg" : "text-focus-slate"
+              )}
             >
-              Close
+              {t.standard_import_tab || 'Standard Import'}
             </button>
             <button 
-              onClick={() => handleBulkImport()}
-              disabled={isBulkProcessing || !bulkInput.trim()}
-              className="flex-[2] bg-focus-cyan text-focus-bg px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={() => { setImportTab('smart'); setImportResults(null); }}
+              className={cn(
+                "flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all",
+                importTab === 'smart' ? "bg-focus-cyan text-focus-bg" : "text-focus-slate"
+              )}
             >
-              {isBulkProcessing ? (
+              {t.smart_compare_tab || 'Smart Compare ✨'}
+            </button>
+          </div>
+
+          {importTab === 'standard' ? (
+            <div className="space-y-6">
+              <div className="p-4 rounded-xl bg-focus-cyan/5 border border-focus-cyan/20 space-y-2">
+                <p className="text-xs text-focus-cyan leading-relaxed">
+                  {t.nexus_importer_desc} 
+                  {isAIEnabled ? ` ${t.ai_detect_desc}` : ` ${t.structured_import_desc}`}
+                </p>
+                {!isAIEnabled && (
+                  <div className="grid grid-cols-2 gap-2 text-[9px] font-mono text-focus-slate">
+                    <div>Subject: Physics</div>
+                    <div>Exam: Final Exam</div>
+                    <div>Task: Order Book</div>
+                    <div>General Topic Title</div>
+                  </div>
+                )}
+              </div>
+
+              <textarea
+                value={bulkInput}
+                onChange={(e) => setBulkInput(e.target.value)}
+                disabled={isBulkProcessing}
+                placeholder={isAIEnabled ? "Lecture 1: Intro to Physics (Oct 10)..." : "Subject: Biology\nCell Structure\nGenetics\nExam: Midterm"}
+                className="w-full h-48 glass border-focus-border rounded-xl p-4 text-sm focus:ring-1 focus:ring-focus-cyan outline-none resize-none font-mono"
+              />
+
+              {importResults && (
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-focus-gold">
+                    {importResults.length > 0 ? t.imported_success.replace('{count}', importResults.length.toString()) : t.imported_none}
+                  </p>
+                  {importResults.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/5">
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-focus-cyan/20 text-focus-cyan uppercase font-bold tracking-tighter">
+                        {item.type}
+                      </span>
+                      <span className="text-[11px] text-focus-text truncate">{item.title}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => { setIsBulkImportOpen(false); setImportResults(null); }}
+                  className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-focus-slate text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-all"
+                >
+                  Close
+                </button>
+                <button 
+                  onClick={() => handleBulkImport()}
+                  disabled={isBulkProcessing || !bulkInput.trim()}
+                  className="flex-[2] bg-focus-cyan text-focus-bg px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isBulkProcessing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-focus-bg/30 border-t-focus-bg rounded-full animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      Initiate Import
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-focus-cyan/5 border border-focus-cyan/20 space-y-2">
+                <p className="text-xs text-focus-cyan leading-relaxed font-medium">
+                  {t.smart_compare_desc || 'Paste your full lecture list. AI will analyze against your existing lectures, matching them to subjects and showing you what is new and what is already added.'}
+                </p>
+              </div>
+
+              {!analyzedLectures ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-focus-bg/30 border-t-focus-bg rounded-full animate-spin" />
-                  Processing...
+                  <textarea
+                    value={bulkInput}
+                    onChange={(e) => setBulkInput(e.target.value)}
+                    disabled={isSmartAnalyzing}
+                    placeholder={language === 'ar' ? 'الصق القائمة الكاملة للمحاضرات هنا، بما في ذلك المحاضرات التي تم إضافتها بالفعل...' : "Paste the full list of lectures here, including those already added..."}
+                    className="w-full h-48 glass border-focus-border rounded-xl p-4 text-sm focus:ring-1 focus:ring-focus-cyan outline-none resize-none font-mono"
+                  />
+
+                  {importResults && (
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2 bg-white/5 p-3 rounded-xl border border-white/5 animate-in fade-in">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-focus-gold">
+                        {language === 'ar' ? `تم استيراد ${importResults.length} محاضرة بنجاح` : `Successfully imported ${importResults.length} lectures!`}
+                      </p>
+                      {importResults.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-2 py-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-focus-cyan" />
+                          <span className="text-[11px] text-focus-text truncate">{item.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => { setIsBulkImportOpen(false); setImportResults(null); }}
+                      className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-focus-slate text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-all"
+                    >
+                      {language === 'ar' ? 'إغلاق' : 'Close'}
+                    </button>
+                    <button 
+                      onClick={handleAnalyzeSmartSyllabus}
+                      disabled={isSmartAnalyzing || !bulkInput.trim()}
+                      className="flex-[2] bg-focus-cyan text-focus-bg px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isSmartAnalyzing ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-focus-bg/30 border-t-focus-bg rounded-full animate-spin" />
+                          {t.analyzing_placeholder || 'Analyzing Syllabus...'}
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={14} />
+                          {t.analyze_lectures_btn || 'Analyze Syllabus'}
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </>
               ) : (
-                <>
-                  <Upload size={14} />
-                  Initiate Import
-                </>
+                <div className="space-y-4 animate-in fade-in duration-300">
+                  <div className="max-h-80 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                    {analyzedLectures.map((item, idx) => {
+                      const isSelected = !!selectedSmartLectures[idx];
+                      const isAdd = item.status === 'add';
+
+                      return (
+                        <div 
+                          key={idx} 
+                          onClick={() => {
+                            setSelectedSmartLectures(prev => ({
+                              ...prev,
+                              [idx]: !prev[idx]
+                            }));
+                          }}
+                          className={cn(
+                            "flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer select-none",
+                            isAdd 
+                              ? (isSelected ? "bg-focus-cyan/5 border-focus-cyan/30" : "bg-transparent border-white/5") 
+                              : (isSelected ? "bg-focus-gold/5 border-focus-gold/30" : "bg-white/5 border-white/5 opacity-50")
+                          )}
+                        >
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}} // handled by div click
+                            className="mt-1 accent-focus-cyan rounded"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[11px] font-bold text-white truncate max-w-[200px]">{item.title}</span>
+                              <span className={cn(
+                                "text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest font-mono",
+                                isAdd ? "bg-green-500/10 text-green-400" : "bg-focus-gold/10 text-focus-gold"
+                              )}>
+                                {isAdd ? (t.status_add || 'To Add') : (t.status_ignore || 'To Ignore')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[9px] text-focus-slate">
+                                Subject: <span className="text-white font-medium">{item.subjectName || 'General'}</span>
+                              </span>
+                              {item.week && (
+                                <span className="text-[9px] text-focus-slate font-mono">
+                                  Week {item.week}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-focus-slate mt-1 italic leading-relaxed">{item.reason}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => { setAnalyzedLectures(null); }}
+                      className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-focus-slate text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-all"
+                    >
+                      {language === 'ar' ? 'إعادة' : 'Back'}
+                    </button>
+                    <button 
+                      onClick={handleApproveSmartImport}
+                      disabled={Object.values(selectedSmartLectures).filter(Boolean).length === 0}
+                      className="flex-[2] bg-focus-cyan text-focus-bg px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Check size={14} />
+                      {t.approve_import_btn?.replace('{count}', Object.values(selectedSmartLectures).filter(Boolean).length.toString()) || `Approve & Import`}
+                    </button>
+                  </div>
+                </div>
               )}
-            </button>
-          </div>
+            </div>
+          )}
         </div>
       </Modal>
 

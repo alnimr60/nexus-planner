@@ -244,9 +244,20 @@ export function getCategorizedPriority(
 
   // Round Logic
   const parentSubject = subjects.find(s => String(s.id) === String(lecture.subjectId));
-  const isPastRound = parentSubject?.round !== undefined && !activeRounds.includes(Number(parentSubject.round));
-  const roundFactor = isPastRound ? 1.5 : 1.0;
-  const roundPenaltyNew = isPastRound ? 0.5 : 1.0; // Penalty for NEW lectures in OLD rounds
+  const isPastRound = parentSubject?.round !== undefined && parentSubject?.round !== null && !activeRounds.includes(Number(parentSubject.round));
+  if (isPastRound) {
+    return {
+      category: 'new',
+      scores: { new: 0, solving: 0, review: 0 },
+      component1: { label: 'Difficulty', score: 0 },
+      component2: { label: 'Volume (Size)', score: 0 },
+      component3: { label: 'Urgency (Inactive Round)', score: 0 },
+      modifiers: 0,
+      total: 0
+    };
+  }
+  const roundFactor = 1.0;
+  const roundPenaltyNew = 1.0;
   
   const safeVal = (v: number) => isFinite(v) ? Math.round(v) : 0;
 

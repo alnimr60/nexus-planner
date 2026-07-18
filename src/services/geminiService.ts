@@ -239,7 +239,7 @@ export async function analyzeSmartLectures(
     ${JSON.stringify(subjects.map(s => ({ id: s.id, name: s.name })))}
     
     Existing Lectures:
-    ${JSON.stringify(existingLectures.map(l => ({ id: l.id, title: l.title, subjectId: l.subjectId })))}
+    ${JSON.stringify(existingLectures.map(l => ({ id: l.id, title: l.title, subjectId: l.subjectId, week: l.week })))}
     
     User Input list of lectures:
     """
@@ -250,9 +250,14 @@ export async function analyzeSmartLectures(
     1. Parse its title, and optionally its pageCount or week if specified.
     2. Match it to one of the Existing Subjects by name/topic similarity. If no existing subject matches, match to null (or the first subject).
     3. Determine if it is a duplicate of, or extremely similar to, any of the Existing Lectures (within the same matched subject or overall).
-       - If it's already present (even if slightly different wording, e.g. "Lecture 1: Intro" vs "Introduction"), set status to "ignore".
-       - If it's a new lecture, set status to "add".
-    4. Provide a clear, short reason (e.g. "Similar to existing: 'Intro to Programming'", "New lecture detected for Math").
+       - If it's already present (even if slightly different wording, e.g. "Lecture 1: Intro" vs "Introduction"), set status to "ignore" and provide the exact title of the similar existing lecture in "matchedLectureTitle".
+       - If it's a new lecture, set status to "add" and "matchedLectureTitle" to null.
+    4. Determine the correct "week" number:
+       - Search for explicit week indicators in the item itself (e.g. "Week 4", "W05", "Week: 6").
+       - Check preceding text or headers in the user input for week boundaries or week groupings (e.g. if the input has "Week 3" followed by several lectures, assign all those lectures to week 3).
+       - If the lecture matches an existing lecture, use that existing lecture's week number.
+       - If no week number can be found or inferred, assign it sequentially or default to a reasonable week based on adjacent parsed lectures.
+    5. Provide a clear, short reason explaining your decision (e.g. "Similar to existing: 'Intro to Programming'", "New lecture detected for Math").
     
     Return a JSON object with a single "items" key containing an array of these analyzed lectures:
     {
@@ -263,8 +268,9 @@ export async function analyzeSmartLectures(
           "subjectName": "...", // Name of the matched existing subject (or "General" if none)
           "status": "add" | "ignore",
           "reason": "...",
+          "matchedLectureTitle": "...", // Title of the extremely similar existing lecture (or null)
           "pageCount": 10, // default 10 if not found
-          "week": 1 // default 1 if not found
+          "week": 1 // correct week number parsed/deduced
         }
       ]
     }
@@ -297,10 +303,11 @@ export async function analyzeSmartLectures(
                   subjectName: { type: Type.STRING },
                   status: { type: Type.STRING, enum: ["add", "ignore"] },
                   reason: { type: Type.STRING },
+                  matchedLectureTitle: { type: Type.STRING, nullable: true },
                   pageCount: { type: Type.NUMBER },
                   week: { type: Type.NUMBER }
                 },
-                required: ["title", "status", "reason"]
+                required: ["title", "status", "reason", "week"]
               }
             }
           },
@@ -312,21 +319,31 @@ export async function analyzeSmartLectures(
     return JSON.parse(response.text || '{"items": []}');
   } catch (error: any) {
     console.error("Error analyzing smart lectures:", error);
-    // Fallback: simple line by line matching
+    // Fallback: simple line by line matching with week parsing
     const lines = input.split('\n').filter(l => l.trim());
-    const items = lines.map(line => {
-      const title = line.trim();
+    let currentWeek = 1;
+    const items = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const weekMatch = trimmed.match(/(?:week|wk|w)\s*[:\-\s]*(\d+)/i);
+      if (weekMatch) {
+        currentWeek = parseInt(weekMatch[1], 10);
+      }
+      
+      const title = trimmed;
       const existing = existingLectures.find(l => l.title.toLowerCase().trim() === title.toLowerCase());
-      return {
+      items.push({
         title,
         subjectId: existing ? existing.subjectId : (subjects[0]?.id || null),
         subjectName: existing ? (subjects.find(s => s.id === existing.subjectId)?.name || "General") : (subjects[0]?.name || "General"),
         status: existing ? "ignore" : "add",
         reason: existing ? `Similar to existing: '${existing.title}'` : "New lecture detected",
+        matchedLectureTitle: existing ? existing.title : null,
         pageCount: 10,
-        week: 1
-      };
-    });
+        week: existing && existing.week ? existing.week : currentWeek
+      });
+    }
     return { items };
   }
 }

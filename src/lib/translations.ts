@@ -204,7 +204,8 @@ export const translations = {
     status_add: 'To Add',
     status_ignore: 'To Ignore',
     status_add_desc: 'This is a new topic.',
-    status_ignore_desc: 'Already exists in your library.'
+    status_ignore_desc: 'Already exists in your library.',
+    matched_with_existing: 'Matches existing lecture: "{title}"'
   },
   ar: {
     dashboard: "لوحة القيادة",
@@ -392,6 +393,7 @@ export const translations = {
     status_add: 'للإضافة',
     status_ignore: 'للتجاهل',
     status_add_desc: 'هذا موضوع جديد.',
-    status_ignore_desc: 'موجود بالفعل في مكتبتك.'
+    status_ignore_desc: 'موجود بالفعل في مكتبتك.',
+    matched_with_existing: 'يتطابق مع محاضرة مضافة: "{title}"'
   }
 };

@@ -155,6 +155,19 @@ const Dashboard = ({
     // 2. Handle Incomplete Tasks (Dynamic Priority Queue)
     const allTaskPool = tasks
       .filter(t => {
+        // Universal Round filter for any task linked to a lecture
+        if (t.lectureId) {
+          const lecture = lectures.find(l => String(l.id) === String(t.lectureId));
+          if (lecture) {
+            const parentSubject = subjects.find(s => String(s.id) === String(lecture.subjectId));
+            if (parentSubject && parentSubject.round !== undefined && parentSubject.round !== null) {
+              if (!activeRounds.includes(Number(parentSubject.round))) {
+                return false;
+              }
+            }
+          }
+        }
+
         if (!t.completed) {
           if (t.lectureId) {
             const lecture = lectures.find(l => String(l.id) === String(t.lectureId));
@@ -4784,7 +4797,6 @@ export default function App() {
                   <div className="max-h-80 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                     {analyzedLectures.map((item, idx) => {
                       const isSelected = !!selectedSmartLectures[idx];
-                      const isAdd = item.status === 'add';
 
                       return (
                         <div 
@@ -4797,25 +4809,25 @@ export default function App() {
                           }}
                           className={cn(
                             "flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer select-none",
-                            isAdd 
-                              ? (isSelected ? "bg-focus-cyan/5 border-focus-cyan/30" : "bg-transparent border-white/5") 
-                              : (isSelected ? "bg-focus-gold/5 border-focus-gold/30" : "bg-white/5 border-white/5 opacity-50")
+                            isSelected 
+                              ? "bg-focus-cyan/5 border-focus-cyan/30" 
+                              : "bg-white/5 border-white/5 opacity-40"
                           )}
                         >
                           <input 
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => {}} // handled by div click
-                            className="mt-1 accent-focus-cyan rounded"
+                            readOnly
+                            className="mt-1 accent-focus-cyan rounded pointer-events-none"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[11px] font-bold text-white truncate max-w-[200px]">{item.title}</span>
                               <span className={cn(
                                 "text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest font-mono",
-                                isAdd ? "bg-green-500/10 text-green-400" : "bg-focus-gold/10 text-focus-gold"
+                                isSelected ? "bg-green-500/10 text-green-400" : "bg-focus-gold/10 text-focus-gold"
                               )}>
-                                {isAdd ? (t.status_add || 'To Add') : (t.status_ignore || 'To Ignore')}
+                                {isSelected ? (t.status_add || 'To Add') : (t.status_ignore || 'To Ignore')}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
@@ -4829,6 +4841,14 @@ export default function App() {
                               )}
                             </div>
                             <p className="text-[10px] text-focus-slate mt-1 italic leading-relaxed">{item.reason}</p>
+                            {item.matchedLectureTitle && (
+                              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-focus-gold font-semibold bg-focus-gold/10 border border-focus-gold/20 px-2.5 py-1 rounded-lg w-fit animate-in fade-in duration-300">
+                                <AlertCircle size={11} className="text-focus-gold shrink-0" />
+                                <span>
+                                  {t.matched_with_existing ? t.matched_with_existing.replace('{title}', item.matchedLectureTitle) : `Matches existing: "${item.matchedLectureTitle}"`}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

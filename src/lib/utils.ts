@@ -273,84 +273,71 @@ export function getCategorizedPriority(
   const solveTotalBase = solveUrgencyRaw * 1.8 * solveMultiplier;
   const reviewTotalBase = reviewUrgencyRaw * 1.3 * (lecture.progress || 1);
 
-  const lastReviewTime = lecture.lastReviewDate ? new Date(lecture.lastReviewDate).getTime() : 0;
-  const lastPracticeTime = lecture.lastPracticeDate ? new Date(lecture.lastPracticeDate).getTime() : 0;
-  // If practice is done, and the most recent session was practice, force a consolidation review task next
-  const needsReviewAfterPractice = practiceDone && (lastPracticeTime > lastReviewTime);
-
   // Determine allowed categories based on daily allocation
   const canNew = !allocation || allocation.new > 0;
   const canSolve = !allocation || allocation.solving > 0;
   const canReview = !allocation || allocation.review > 0;
 
+  // Calculate independent final totals
+  const dynamicUrgencyNew = newUrgencyRaw * contextMult * roundPenaltyNew;
+  const finalTotalNew = safeVal(scoreDifficulty) + safeVal(scoreSize) + safeVal(dynamicUrgencyNew);
+
+  const dynamicUrgencySolve = solveTotalBase * contextMult * roundFactor;
+  const finalTotalSolve = safeVal(scoreDifficulty) + safeVal(scoreSize) + safeVal(dynamicUrgencySolve);
+
+  const dynamicUrgencyReview = reviewTotalBase * contextMult * roundFactor;
+  const finalTotalReview = safeVal(scoreDifficulty) + safeVal(scoreSize) + safeVal(dynamicUrgencyReview);
+
+  // Stop picking a single "winner" category for scores. Return actual values independently.
+  const scores = {
+    new: (isNew && canNew) ? finalTotalNew : 0,
+    solving: (!isNew && canSolve) ? finalTotalSolve : 0,
+    review: (!isNew && canReview) ? finalTotalReview : 0
+  };
+
+  // Choose primary category for single display/breakdown fallback (highest score among valid/active)
   let chosenCategory: TaskType = 'review';
-  if (isNew && canNew) {
+  let finalTotal = 0;
+  let dynamicUrgency = 0;
+  let rawUrgency = 0;
+  let label3 = 'Urgency';
+
+  if (isNew) {
     chosenCategory = 'new';
+    finalTotal = finalTotalNew;
+    dynamicUrgency = dynamicUrgencyNew;
+    rawUrgency = newUrgencyRaw;
+    label3 = 'Urgency (Temporal)';
   } else {
-    if (canSolve && !canReview) {
+    // Both solving and review are valid. Compare scores.
+    if (scores.solving > scores.review) {
       chosenCategory = 'solving';
-    } else if (canReview && !canSolve) {
-      chosenCategory = 'review';
-    } else if (!canReview && !canSolve) {
-      chosenCategory = isNew ? 'new' : 'review';
+      finalTotal = finalTotalSolve;
+      dynamicUrgency = dynamicUrgencySolve;
+      rawUrgency = solveUrgencyRaw * 1.8;
+      label3 = 'Urgency (Retrieval)';
     } else {
-      if (solveTotalBase > reviewTotalBase && !needsReviewAfterPractice) {
-        chosenCategory = 'solving';
-      } else {
-        chosenCategory = 'review';
-      }
+      chosenCategory = 'review';
+      finalTotal = finalTotalReview;
+      dynamicUrgency = dynamicUrgencyReview;
+      rawUrgency = reviewUrgencyRaw * 1.3;
+      label3 = 'Urgency (Retention)';
     }
   }
 
-  if (chosenCategory === 'new') {
-    const dynamicUrgency = newUrgencyRaw * contextMult * roundPenaltyNew;
-    const c1 = safeVal(scoreDifficulty);
-    const c2 = safeVal(scoreSize);
-    const c3 = safeVal(newUrgencyRaw);
-    const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
-    
-    return {
-      category: 'new',
-      scores: { new: finalTotal, solving: 0, review: 0 },
-      component1: { label: 'Difficulty', score: c1 },
-      component2: { label: 'Volume (Size)', score: c2 },
-      component3: { label: 'Urgency (Temporal)', score: c3 },
-      modifiers: Math.round(dynamicUrgency - newUrgencyRaw),
-      total: finalTotal
-    };
-  } else if (chosenCategory === 'solving') {
-    const dynamicUrgency = solveTotalBase * contextMult * roundFactor;
-    const c1 = safeVal(scoreDifficulty);
-    const c2 = safeVal(scoreSize);
-    const c3 = safeVal(solveUrgencyRaw * 1.8);
-    const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
-    
-    return {
-      category: 'solving',
-      scores: { new: 0, solving: finalTotal, review: 0 },
-      component1: { label: 'Difficulty', score: c1 },
-      component2: { label: 'Volume (Size)', score: c2 },
-      component3: { label: 'Urgency (Retrieval)', score: c3 },
-      modifiers: Math.round(dynamicUrgency - (solveUrgencyRaw * 1.8)),
-      total: finalTotal
-    };
-  } else {
-    const dynamicUrgency = reviewTotalBase * contextMult * roundFactor;
-    const c1 = safeVal(scoreDifficulty);
-    const c2 = safeVal(scoreSize);
-    const c3 = safeVal(reviewUrgencyRaw * 1.3);
-    const finalTotal = c1 + c2 + safeVal(dynamicUrgency);
-    
-    return {
-      category: 'review',
-      scores: { new: 0, solving: 0, review: finalTotal },
-      component1: { label: 'Difficulty', score: c1 },
-      component2: { label: 'Volume (Size)', score: c2 },
-      component3: { label: 'Urgency (Retention)', score: c3 },
-      modifiers: Math.round(dynamicUrgency - (reviewUrgencyRaw * 1.3)),
-      total: finalTotal
-    };
-  }
+  const c1 = safeVal(scoreDifficulty);
+  const c2 = safeVal(scoreSize);
+  const c3 = safeVal(rawUrgency);
+
+  return {
+    category: chosenCategory,
+    scores,
+    component1: { label: 'Difficulty', score: c1 },
+    component2: { label: 'Volume (Size)', score: c2 },
+    component3: { label: label3, score: c3 },
+    modifiers: Math.round(dynamicUrgency - rawUrgency),
+    total: finalTotal
+  };
 }
 
 export function getLecturePriorityScore(
@@ -441,7 +428,11 @@ export function calculatePriorityScore(
     const lecture = lectures.find(l => String(l.id) === String(task.lectureId));
     if (lecture) {
       const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
-      rawScore = breakdown.total;
+      if (task.type && breakdown.scores[task.type] !== undefined) {
+        rawScore = breakdown.scores[task.type];
+      } else {
+        rawScore = breakdown.total;
+      }
     }
   } else {
     // Fallback for non-lecture tasks

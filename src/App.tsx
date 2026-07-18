@@ -3310,36 +3310,41 @@ export default function App() {
       
       lectures.forEach(lecture => {
         const breakdown = getCategorizedPriority(lecture, weights, semesterStartDate, exams, activeRounds, subjects, allocation);
-        const { category, total } = breakdown;
+        const { scores } = breakdown;
         
-        if (total > 2) {
-          let title = "";
-          let priority: 'high' | 'medium' | 'low' = 'medium';
+        const categories: TaskType[] = ['new', 'solving', 'review'];
+        
+        categories.forEach(category => {
+          const score = scores[category] || 0;
+          if (score > 2) {
+            let title = "";
+            let priority: 'high' | 'medium' | 'low' = 'medium';
 
-          if (category === 'new') {
-            title = `${t.study_prefix || 'Study'}: ${lecture.title}`;
-            priority = total > 80 ? 'high' : 'medium';
-          } else if (category === 'solving') {
-            title = `${t.practice_prefix || 'Practice'}: ${lecture.title}`;
-            priority = total > 75 ? 'high' : 'medium';
-          } else if (category === 'review') {
-            title = `${t.revision_prefix || 'Revision'}: ${lecture.title}`;
-            priority = total > 85 ? 'high' : 'medium';
-          }
+            if (category === 'new') {
+              title = `${t.study_prefix || 'Study'}: ${lecture.title}`;
+              priority = score > 80 ? 'high' : 'medium';
+            } else if (category === 'solving') {
+              title = `${t.practice_prefix || 'Practice'}: ${lecture.title}`;
+              priority = score > 75 ? 'high' : 'medium';
+            } else if (category === 'review') {
+              title = `${t.revision_prefix || 'Revision'}: ${lecture.title}`;
+              priority = score > 85 ? 'high' : 'medium';
+            }
 
-          if (title) {
-            gTasks.push({
-              id: `auto-${category}-${String(lecture.id)}`,
-              title: title,
-              dueDate: new Date().toISOString(),
-              priority: priority,
-              completed: false,
-              lectureId: lecture.id,
-              priorityScore: total,
-              type: category
-            });
+            if (title) {
+              gTasks.push({
+                id: `auto-${category}-${String(lecture.id)}`,
+                title: title,
+                dueDate: new Date().toISOString(),
+                priority: priority,
+                completed: false,
+                lectureId: lecture.id,
+                priorityScore: score,
+                type: category
+              });
+            }
           }
-        }
+        });
       });
 
       if (gTasks.length > 0) {

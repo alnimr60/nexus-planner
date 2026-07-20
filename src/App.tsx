@@ -1872,6 +1872,7 @@ const ExamForm = ({
 }) => {
   const [formData, setFormData] = useState<Exam>(exam);
   const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
+  const [lectureSearch, setLectureSearch] = useState('');
 
   const toggleLecture = (lectureId: string) => {
     setFormData(prev => {
@@ -1882,8 +1883,13 @@ const ExamForm = ({
     });
   };
 
-  const lecturesBySubject = subjects.map(subject => {
-    const subjectLectures = lectures.filter(l => l.subjectId === subject.id);
+  const filteredLecturesBySubject = subjects.map(subject => {
+    const subjectLectures = lectures.filter(l => {
+      const matchesSubject = l.subjectId === subject.id;
+      if (!matchesSubject) return false;
+      if (!lectureSearch.trim()) return true;
+      return l.title.toLowerCase().includes(lectureSearch.toLowerCase());
+    });
     const selectedCount = subjectLectures.filter(l => formData.linkedLectureIds.includes(l.id)).length;
     return {
       subject,
@@ -1952,67 +1958,91 @@ const ExamForm = ({
 
         <div>
           <label className="block text-xs font-bold uppercase tracking-widest text-focus-slate mb-4">{t.link_lectures}</label>
-          <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
-            {lecturesBySubject.map(group => (
-              <div key={group.subject.id} className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setExpandedSubjectId(expandedSubjectId === group.subject.id ? null : group.subject.id)}
-                  className={cn(
-                    "w-full flex items-center justify-between p-3 rounded-xl border transition-all",
-                    expandedSubjectId === group.subject.id
-                      ? "bg-white/10 border-focus-cyan/50 shadow-lg"
-                      : "bg-white/5 border-white/5 hover:bg-white/10"
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-2 h-2 rounded-full", group.subject.color)} />
-                    <span className="text-xs font-bold tracking-tight text-white">{group.subject.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {group.selectedCount > 0 && (
-                      <span className="text-[10px] font-bold bg-focus-cyan/20 text-focus-cyan px-2 py-0.5 rounded-full">
-                        {group.selectedCount} {language === 'ar' ? 'مختار' : 'selected'}
-                      </span>
-                    )}
-                    <motion.div
-                      animate={{ rotate: expandedSubjectId === group.subject.id ? 180 : 0 }}
-                      className="text-focus-slate"
-                    >
-                      <ChevronDown size={14} />
-                    </motion.div>
-                  </div>
-                </button>
+          
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-focus-slate" size={14} />
+            <input 
+              type="text"
+              value={lectureSearch}
+              onChange={(e) => setLectureSearch(e.target.value)}
+              placeholder={language === 'ar' ? "البحث عن محاضرة لربطها..." : "Search lectures to link..."}
+              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-10 py-2 text-xs outline-none focus:border-focus-cyan/30 text-white"
+            />
+            {lectureSearch && (
+              <button 
+                type="button"
+                onClick={() => setLectureSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-focus-slate hover:text-white"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
 
-                <AnimatePresence>
-                  {expandedSubjectId === group.subject.id && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden space-y-2 pl-4"
-                    >
-                      {group.lectures.map(lecture => (
-                        <button
-                          key={lecture.id}
-                          type="button"
-                          onClick={() => toggleLecture(lecture.id)}
-                          className={cn(
-                            "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
-                            formData.linkedLectureIds.includes(lecture.id)
-                              ? "bg-focus-cyan/10 border-focus-cyan text-focus-cyan"
-                              : "bg-white/5 border-white/10 text-focus-slate hover:bg-white/10"
-                          )}
-                        >
-                          <span className="text-xs font-medium truncate">{lecture.title}</span>
-                          {formData.linkedLectureIds.includes(lecture.id) && <CheckCircle2 size={14} />}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            ))}
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
+            {filteredLecturesBySubject.map(group => {
+              const isExpanded = expandedSubjectId === group.subject.id || (lectureSearch.trim() !== '' && group.lectures.some(l => l.title.toLowerCase().includes(lectureSearch.toLowerCase())));
+              return (
+                <div key={group.subject.id} className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSubjectId(expandedSubjectId === group.subject.id ? null : group.subject.id)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-3 rounded-xl border transition-all",
+                      isExpanded
+                        ? "bg-white/10 border-focus-cyan/50 shadow-lg"
+                        : "bg-white/5 border-white/5 hover:bg-white/10"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-2 h-2 rounded-full", group.subject.color)} />
+                      <span className="text-xs font-bold tracking-tight text-white">{group.subject.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {group.selectedCount > 0 && (
+                        <span className="text-[10px] font-bold bg-focus-cyan/20 text-focus-cyan px-2 py-0.5 rounded-full">
+                          {group.selectedCount} {language === 'ar' ? 'مختار' : 'selected'}
+                        </span>
+                      )}
+                      <motion.div
+                        animate={{ rotate: isExpanded ? 180 : 0 }}
+                        className="text-focus-slate"
+                      >
+                        <ChevronDown size={14} />
+                      </motion.div>
+                    </div>
+                  </button>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden space-y-2 pl-4"
+                      >
+                        {group.lectures.map(lecture => (
+                          <button
+                            key={lecture.id}
+                            type="button"
+                            onClick={() => toggleLecture(lecture.id)}
+                            className={cn(
+                              "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left",
+                              formData.linkedLectureIds.includes(lecture.id)
+                                ? "bg-focus-cyan/10 border-focus-cyan text-focus-cyan"
+                                : "bg-white/5 border-white/10 text-focus-slate hover:bg-white/10"
+                            )}
+                          >
+                            <span className="text-xs font-medium truncate">{lecture.title}</span>
+                            {formData.linkedLectureIds.includes(lecture.id) && <CheckCircle2 size={14} />}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
